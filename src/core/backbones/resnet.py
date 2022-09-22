@@ -41,6 +41,20 @@ class ResNet(BackBone):
         super(ResNet, self).__init__()
         self.stem = stem
 
+    @staticmethod
+    def make_layer(block_class,nlayers,filters,stride=1):
+        """Create a list of layers that forms one ResNet Stage
+        """
+        block = tf.keras.Sequential()
+        block.add(block_class(filters,stride=stride))
+
+        for _ in range(1,nlayers):
+            block.add(block_class(filters,stride=1))
+
+        return block
+
+
+
     def __call__(self):
         """
         """
