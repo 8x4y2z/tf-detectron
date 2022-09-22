@@ -1,0 +1,13 @@
+# dirs
+interim/
+others/
+tlr/
+topics/
+lisa/
+research-proposal/
+
+
+
+# files
+library.bib
+*.pyc
