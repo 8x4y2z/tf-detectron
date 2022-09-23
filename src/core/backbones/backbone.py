@@ -12,6 +12,6 @@ class BackBone(tf.keras.layers.Layer,metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def __call__(self):
+    def call(self):
         """
         """
