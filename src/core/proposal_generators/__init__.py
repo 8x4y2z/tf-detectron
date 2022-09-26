@@ -1,0 +1,23 @@
+# -*- coding: utf-8 -*-
+
+from src.utils.registry import Registry
+from . import rpn
+
+PROPOSAL_GENERATOR_REGISTRY = Registry("PROPOSAL_GENERATOR")
+PROPOSAL_GENERATOR_REGISTRY.__doc__ = """
+Registry for proposal generator, which produces object proposals from feature maps.
+
+The registered object will be called with `obj(cfg, input_shape)`.
+The call should return a `tf.layers.Layer` object.
+"""
+
+def build_proposal_generator(config):
+    """
+    Build a proposal generator from `config.MODEL.PROPOSAL_GENERATOR.NAME`.
+    The name can be "PrecomputedProposals" to use no proposal generator.
+    """
+    name = config.MODEL.PROPOSAL_GENERATOR.NAME
+    if name == "PrecomputedProposals":
+        return None
+
+    return PROPOSAL_GENERATOR_REGISTRY.get(name)(config)
