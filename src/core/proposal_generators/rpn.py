@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 
+from typing import List
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D,BatchNormalization,MaxPool2D,GlobalAveragePooling2D,Dense
 
 from src.utils.registry import Registry
 from src.core.sampling import subsample_labels
 from src.structures import Boxes,pairwise_iou
+from src.utils.ops import scatter_tf
 from . import PROPOSAL_GENERATOR_REGISTRY
 
 
@@ -188,8 +190,8 @@ class RPN(tf.keras.layers.Layer):
         )
         # Fill with the ignore label (-1), then set positive and negative labels
         label = tf.fill(label.shape,-1)
-        label.scatter_(0, pos_idx, 1)
-        label.scatter_(0, neg_idx, 0)
+        label = scatter_tf(label,pos_idx,1,0)
+        label = scatter_tf(label,neg_idx,0,0)
         return label
 
     def label_and_sample_anchors(self, anchors, gt_instances):
