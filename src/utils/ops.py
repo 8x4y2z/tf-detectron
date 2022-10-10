@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 
+from typing import List
+
 import tensorflow as tf
 import numpy as np
 
-__all__ = ["nonzero_tuple","scater_tf"]
+__all__ = ["nonzero_tuple","scatter_tf","cat"]
 
 def nonzero_tuple(x):
     zeros = tf.constant(0,dtype=x.dtype)
@@ -63,3 +65,13 @@ def scatter_tf(out,index,src,dim):
         out = tf.tensor_scatter_nd_update(out,new_idx,new_src)
 
     return out
+
+
+def cat(tensors: List[tf.Tensor], axis: int = 0):
+    """
+    Efficient version of torch.cat that avoids a copy if there is only a single element in a list
+    """
+    assert isinstance(tensors, (list, tuple))
+    if len(tensors) == 1:
+        return tensors[0]
+    return tf.concat(tensors, axis=axis)

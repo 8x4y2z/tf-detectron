@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 
-from typing import List
+from typing import List, Dict
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D,BatchNormalization,MaxPool2D,GlobalAveragePooling2D,Dense
 
 from src.utils.registry import Registry
 from src.core.sampling import subsample_labels
 from src.structures import Boxes,pairwise_iou
-from src.utils.ops import scatter_tf
+from src.utils.ops import scatter_tf, cat
+from src.utils.events import get_event_storage
+from src.core.box_regression import _dense_box_regression_loss
 from . import PROPOSAL_GENERATOR_REGISTRY
 
 
@@ -231,7 +233,6 @@ class RPN(tf.keras.layers.Layer):
 
             if self.anchor_boundary_thresh >= 0:
                 # Discard anchors that go out of the boundaries of the image
-                # NOTE: This is legacy functionality that is turned off by default in Detectron2
                 anchors_inside_image = anchors.inside_box(image_size_i, self.anchor_boundary_thresh)
                 gt_labels_i[~anchors_inside_image] = -1
 
@@ -240,7 +241,7 @@ class RPN(tf.keras.layers.Layer):
 
             if len(gt_boxes_i) == 0:
                 # These values won't be used anyway since the anchor is labeled as background
-                matched_gt_boxes_i = torch.zeros_like(anchors.tensor)
+                matched_gt_boxes_i = tf.zeros_like(anchors.tensor)
             else:
                 # TODO wasted indexing computation for ignored boxes
                 matched_gt_boxes_i = gt_boxes_i[matched_idxs].tensor
@@ -249,15 +250,14 @@ class RPN(tf.keras.layers.Layer):
             matched_gt_boxes.append(matched_gt_boxes_i)
         return gt_labels, matched_gt_boxes
 
-    @torch.jit.unused
     def losses(
         self,
         anchors: List[Boxes],
-        pred_objectness_logits: List[torch.Tensor],
-        gt_labels: List[torch.Tensor],
-        pred_anchor_deltas: List[torch.Tensor],
-        gt_boxes: List[torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        pred_objectness_logits: List,
+        gt_labels: List,
+        pred_anchor_deltas: List,
+        gt_boxes: List,
+    ) -> Dict:
         """
         Return the losses from a set of RPN predictions and their associated ground-truth.
 
@@ -279,12 +279,13 @@ class RPN(tf.keras.layers.Layer):
                 `loss_rpn_loc` for proposal localization.
         """
         num_images = len(gt_labels)
-        gt_labels = torch.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
+        gt_labels = tf.stack(gt_labels)  # (N, sum(Hi*Wi*Ai))
 
         # Log the number of positive/negative anchors per-image that's used in training
         pos_mask = gt_labels == 1
-        num_pos_anchors = pos_mask.sum().item()
-        num_neg_anchors = (gt_labels == 0).sum().item()
+        num_pos_anchors = tf.math.reduce_sum(pos_mask).numpy()
+        num_neg_anchors = (gt_labels == 0).numpy().sum()
+        num_neg_anchors = tf.math.reduce_sum(tf.cast((gt_labels == 0),tf.int32)).numpy()
         storage = get_event_storage()
         storage.put_scalar("rpn/num_pos_anchors", num_pos_anchors / num_images)
         storage.put_scalar("rpn/num_neg_anchors", num_neg_anchors / num_images)
@@ -300,9 +301,9 @@ class RPN(tf.keras.layers.Layer):
         )
 
         valid_mask = gt_labels >= 0
-        objectness_loss = F.binary_cross_entropy_with_logits(
-            cat(pred_objectness_logits, dim=1)[valid_mask],
-            gt_labels[valid_mask].to(torch.float32),
+        objectness_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+            tf.cast(gt_labels[valid_mask],tf.float32),
+            cat(pred_objectness_logits, axis=1)[valid_mask],
             reduction="sum",
         )
         normalizer = self.batch_size_per_image * num_images
