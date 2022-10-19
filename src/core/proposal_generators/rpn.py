@@ -301,10 +301,11 @@ class RPN(tf.keras.layers.Layer):
         )
 
         valid_mask = gt_labels >= 0
-        objectness_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+        objectness_loss = tf.math.reduce_sum(
+            tf.nn.sigmoid_cross_entropy_with_logits(
             tf.cast(gt_labels[valid_mask],tf.float32),
-            cat(pred_objectness_logits, axis=1)[valid_mask],
-            reduction="sum",
+            cat(pred_objectness_logits, axis=1)[valid_mask]
+            )
         )
         normalizer = self.batch_size_per_image * num_images
         losses = {
