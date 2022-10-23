@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D,BatchNormalization,MaxPool2D,GlobalAveragePooling2D,Dense
 
 from src.utils.registry import Registry
 from src.core.sampling import subsample_labels
-from src.structures import Boxes,pairwise_iou
+from src.structures import Boxes, pairwise_iou, ImageList, Instances
 from src.utils.ops import scatter_tf, cat
 from src.utils.events import get_event_storage
 from src.core.box_regression import _dense_box_regression_loss
@@ -251,13 +251,13 @@ class RPN(tf.keras.layers.Layer):
         return gt_labels, matched_gt_boxes
 
     def losses(
-        self,
-        anchors: List[Boxes],
-        pred_objectness_logits: List,
-        gt_labels: List,
-        pred_anchor_deltas: List,
-        gt_boxes: List,
-    ) -> Dict:
+            self,
+            anchors: List[Boxes],
+            pred_objectness_logits: List,
+            gt_labels: List,
+            pred_anchor_deltas: List,
+            gt_boxes: List,
+    ) -> Dict[str, tf.Tensor]:
         """
         Return the losses from a set of RPN predictions and their associated ground-truth.
 
@@ -317,10 +317,10 @@ class RPN(tf.keras.layers.Layer):
         losses = {k: v * self.loss_weight.get(k, 1.0) for k, v in losses.items()}
         return losses
 
-    def forward(
+    def call(
         self,
         images: ImageList,
-        features: Dict[str, torch.Tensor],
+        features: Dict[str, tf.Tensor],
         gt_instances: Optional[List[Instances]] = None,
     ):
         """
@@ -344,23 +344,24 @@ class RPN(tf.keras.layers.Layer):
         # Transpose the Hi*Wi*A dimension to the middle:
         pred_objectness_logits = [
             # (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
-            score.permute(0, 2, 3, 1).flatten(1)
+            tf.reshape(tf.permute(score,(0,2,3,1)),[score.shape[0],-1])
             for score in pred_objectness_logits
         ]
         pred_anchor_deltas = [
             # (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N, Hi*Wi*A, B)
-            x.view(x.shape[0], -1, self.anchor_generator.box_dim, x.shape[-2], x.shape[-1])
-            .permute(0, 3, 4, 1, 2)
-            .flatten(1, -2)
+            tf.reshape(
+                tf.transpose(
+                    tf.reshape(x,(x.shape[0], -1, self.anchor_generator.box_dim, x.shape[-2], x.shape[-1])),
+                (0,3,4,1,2)
+                ),[x.shape[0],-1,x.shape[-1]]
+            )
             for x in pred_anchor_deltas
         ]
 
         if self.training:
             assert gt_instances is not None, "RPN requires gt_instances in training!"
             gt_labels, gt_boxes = self.label_and_sample_anchors(anchors, gt_instances)
-            losses = self.losses(
-                anchors, pred_objectness_logits, gt_labels, pred_anchor_deltas, gt_boxes
-            )
+            losses = self.losses(anchors, pred_objectness_logits, gt_labels, pred_anchor_deltas, gt_boxes)
         else:
             losses = {}
         proposals = self.predict_proposals(
@@ -371,8 +372,8 @@ class RPN(tf.keras.layers.Layer):
     def predict_proposals(
         self,
         anchors: List[Boxes],
-        pred_objectness_logits: List[torch.Tensor],
-        pred_anchor_deltas: List[torch.Tensor],
+        pred_objectness_logits: List[tf.Tensor],
+        pred_anchor_deltas: List[tf.Tensor],
         image_sizes: List[Tuple[int, int]],
     ):
         """
@@ -387,18 +388,17 @@ class RPN(tf.keras.layers.Layer):
         # The proposals are treated as fixed for joint training with roi heads.
         # This approach ignores the derivative w.r.t. the proposal boxes’ coordinates that
         # are also network responses.
-        with torch.no_grad():
-            pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
-            return find_top_rpn_proposals(
-                pred_proposals,
-                pred_objectness_logits,
-                image_sizes,
-                self.nms_thresh,
-                self.pre_nms_topk[self.training],
-                self.post_nms_topk[self.training],
-                self.min_box_size,
-                self.training,
-            )
+        pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
+        return find_top_rpn_proposals(
+            pred_proposals,
+            pred_objectness_logits,
+            image_sizes,
+            self.nms_thresh,
+            self.pre_nms_topk[self.training],
+            self.post_nms_topk[self.training],
+            self.min_box_size,
+            self.training,
+        )
 
     def _decode_proposals(self, anchors: List[Boxes], pred_anchor_deltas: List[torch.Tensor]):
         """

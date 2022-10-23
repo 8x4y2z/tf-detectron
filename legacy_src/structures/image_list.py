@@ -80,8 +80,8 @@ class ImageList(object):
             assert t.shape[:-2] == tensors[0].shape[:-2], t.shape
 
         image_sizes = [(im.shape[-2], im.shape[-1]) for im in tensors]
-        image_sizes_tensor = [shapes_to_tensor(x) for x in image_sizes]
-        max_size = torch.stack(image_sizes_tensor).max(0).values
+        image_sizes_tensor = [tf.convert_to_tensor(x) for x in image_sizes]
+        max_size = tf.reduce_max(tf.stack(image_sizes_tensor),0).numpy()
 
         if padding_constraints is not None:
             square_size = padding_constraints.get("square_size", 0)
@@ -93,32 +93,28 @@ class ImageList(object):
         if size_divisibility > 1:
             stride = size_divisibility
             # the last two dims are H,W, both subject to divisibility requirement
-            max_size = (max_size + (stride - 1)).div(stride, rounding_mode="floor") * stride
-
-        # handle weirdness of scripting and tracing ...
-        if torch.jit.is_scripting():
-            max_size: List[int] = max_size.to(dtype=torch.long).tolist()
-        else:
-            if torch.jit.is_tracing():
-                image_sizes = image_sizes_tensor
+            max_size = tf.math.floordiv(max_size+(stride-1),stride) * stride
 
         if len(tensors) == 1:
-            # This seems slightly (2%) faster.
-            # TODO: check whether it's faster for multiple images as well
             image_size = image_sizes[0]
-            padding_size = [0, max_size[-1] - image_size[1], 0, max_size[-2] - image_size[0]]
-            batched_imgs = F.pad(tensors[0], padding_size, value=pad_value).unsqueeze_(0)
+            # paddings in tensorflow are 2d
+            padding_size = [
+                [0,max_size[-2] - image_size[0]],
+                [0,max_size[-1] - image_size[1]]
+            ]
+            batched_imgs = tf.expand_dims(tf.pad(tensors[0], padding_size, constant_values=pad_value),0)
         else:
             # max_size can be a tensor in tracing mode, therefore convert to list
             batch_shape = [len(tensors)] + list(tensors[0].shape[:-2]) + list(max_size)
-            device = (
-                None if torch.jit.is_scripting() else ("cpu" if torch.jit.is_tracing() else None)
-            )
-            batched_imgs = tensors[0].new_full(batch_shape, pad_value, device=device)
-            batched_imgs = move_device_like(batched_imgs, tensors[0])
+            # device = (
+            #     None if torch.jit.is_scripting() else ("cpu" if torch.jit.is_tracing() else None)
+            # )
+            # batched_imgs = tensors[0].new_full(batch_shape, pad_value, device=device)
+            batched_imgs = tf.fill(batch_shape,pad_value)
+            # batched_imgs = move_device_like(batched_imgs, tensors[0])
             for i, img in enumerate(tensors):
                 # Use `batched_imgs` directly instead of `img, pad_img = zip(tensors, batched_imgs)`
                 # Tracing mode cannot capture `copy_()` of temporary locals
-                batched_imgs[i, ..., : img.shape[-2], : img.shape[-1]].copy_(img)
+                batched_imgs[i, ..., : img.shape[-2], : img.shape[-1]] = tf.identity(img)
 
-        return ImageList(batched_imgs.contiguous(), image_sizes)
+        return ImageList(batched_imgs, image_sizes)
