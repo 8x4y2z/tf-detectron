@@ -3,19 +3,20 @@
 import tensorflow as tf
 
 from src.core.backbones import BackBone, build_backbone
-from . import META_ARCH_REGISTRY
+from .build import META_ARCH_REGISTRY
 from src.core.postprocessing import detector_postprocess
+from src.config import Configurable
 
 
 @META_ARCH_REGISTRY.register()
-class RCNN(tf.keras.layers.Layer):
+class GeneralizedRCNN(tf.keras.layers.Layer,metaclass=Configurable):
     """Implemets a Generalized RCNN composed of following components:
     1. Feature extractor aka BackBone
     2. RPN
     3. Per-region feature extractor and prediction
     """
 
-    def __init__(self,backbone,proposal_generator,roi_heads,pixel_mean,pixel_std):
+    def __init__(self,*,backbone,proposal_generator,roi_heads,pixel_mean,pixel_std):
         """
         :param backbone: is feature extractor
         :param proposal_generator: is RPN
@@ -37,6 +38,23 @@ class RCNN(tf.keras.layers.Layer):
         proposals = self.proposal_generator(inputs,features,training=training)
         outputs = self.roi_heads(inputs,features,proposals,training=training)
         return features,proposals,outputs
+
+    @classmethod
+    def from_config(cls,cfg):
+        backbone = build_backbone(cfg)
+        proposal_gen = build_proposal_generator(cfg, backbone.output_shape())
+        roi_heads = build_roi_head(cfg, backbone.output_shape())
+
+        return {
+            "backbone": backbone,
+            "proposal_generator": proposal_gen,
+            "roi_heads": roi_heads,
+            "input_format": cfg.INPUT.FORMAT,
+            "vis_period": cfg.VIS_PERIOD,
+            "pixel_mean": cfg.MODEL.PIXEL_MEAN,
+            "pixel_std": cfg.MODEL.PIXEL_STD,
+        }
+
 
 @META_ARCH_REGISTRY.register()
 class ProposalNetwork(tf.keras.layers.Layer):

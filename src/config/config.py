@@ -334,3 +334,11 @@ def _called_with_cfg(*args, **kwargs):
     # `from_config`'s first argument is forced to be "cfg".
     # So the above check covers all cases.
     return False
+
+class Configurable(type):
+
+    def __call__(cls,*args,**kwargs):
+        if len(args) == 1:
+            if isinstance(args[0],CfgNode):
+                return cls.from_config(args[0])
+        return super().__call__(*args,**kwargs)
