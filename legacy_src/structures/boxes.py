@@ -162,7 +162,7 @@ class Boxes:
         return cat_boxes
 
     @property
-    def device(self) -> device:
+    def device(self):
         return self.tensor.device
 
     # type "Iterator[torch.Tensor]", yield, and iter() not supported by torchscript

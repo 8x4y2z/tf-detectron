@@ -47,7 +47,7 @@ class ImageList(object):
         return ImageList(cast_tensor, self.image_sizes)
 
     @property
-    def device(self) -> device:
+    def device(self):
         return self.tensor.device
 
     @staticmethod

@@ -7,6 +7,15 @@ from src.core.backbones.backbone import BackBone
 from . import BACKBONE_REGISTRY
 from src.core.norms import get_norm
 
+__all__ = (
+    "BasicBlock",
+    "BottleNeckBlock",
+    "Stem",
+    "ResNet",
+    "make_stage",
+    "build_resnet_backbone",
+)
+
 RESNET_BLOCKS = {
     18: [2, 2, 2, 2],
     34: [3, 4, 6, 3],
@@ -312,3 +321,11 @@ def build_resnet_backbone(config):
     stages = ResNet.make_default_stages(depth,block_class)
 
     return ResNet(stem, stages, out_layers=out_features, freeze_at=freeze_at)
+
+
+
+def make_stage(*args, **kwargs):
+    """
+    Deprecated alias for backward compatibiltiy.
+    """
+    return ResNet.make_layer(*args, **kwargs)

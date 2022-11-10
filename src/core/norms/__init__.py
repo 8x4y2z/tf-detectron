@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from tensorflow.keras.layers import BatchNormalization, GroupNormalization
+from tensorflow.keras.layers import BatchNormalization#, GroupNormalization
 
 def get_norm(norm):
     """
@@ -21,7 +21,7 @@ def get_norm(norm):
             "batch_norm": BatchNormalization,
             # "SyncBN": NaiveSyncBatchNorm if env.TORCH_VERSION <= (1, 5) else nn.SyncBatchNorm,
             # "FrozenBN": FrozenBatchNorm2d,
-            "GN": GroupNormalization(32),
+            # "GN": GroupNormalization(32),
             # for debugging:
             # "nnSyncBN": nn.SyncBatchNorm,
             # "naiveSyncBN": NaiveSyncBatchNorm,
