@@ -2,10 +2,21 @@
 
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D,BatchNormalization,MaxPool2D,GlobalAveragePooling2D,Dense
+import numpy as np
 
 from src.core.backbones.backbone import BackBone
+from src.structures.shape_spec import ShapeSpec
 from . import BACKBONE_REGISTRY
 from src.core.norms import get_norm
+
+__all__ = (
+    "BasicBlock",
+    "BottleNeckBlock",
+    "Stem",
+    "ResNet",
+    "make_stage",
+    "build_resnet_backbone",
+)
 
 RESNET_BLOCKS = {
     18: [2, 2, 2, 2],
@@ -16,11 +27,12 @@ RESNET_BLOCKS = {
 }
 
 class Stem(tf.keras.layers.Layer):
-    def __init__(self,filters=64,kernal_size=7,norm="batch_norm"):
+    def __init__(self,filters=64,kernel_size=7,norm="batch_norm"):
         "docstring"
         super(Stem, self).__init__()
+        self.out_channels = filters
         self.conv1 = Conv2D(filters=filters,
-                            kernal_size=kernal_size,
+                            kernel_size=kernel_size,
                             strides=2,
                             padding="same",
                             )
@@ -30,6 +42,7 @@ class Stem(tf.keras.layers.Layer):
         self.pool1 = MaxPool2D(pool_size=(3, 3),
                                strides=2,
                                padding="same")
+        self.stride = 4
 
     def call(self,x,training=None):
         """
@@ -70,6 +83,9 @@ class BasicBlock(tf.keras.layers.Layer):
         else:
             self.downsample = tf.keras.layers.Lambda(lambda x: x)
 
+        self.out_channles = filter_num
+        self.stride = stride
+
 
     def call(self, inputs, training=None):
         residual = self.downsample(inputs, training=training)
@@ -86,33 +102,36 @@ class BasicBlock(tf.keras.layers.Layer):
 
 
 class BottleNeckBlock(tf.keras.layers.Layer):
-    def __init__(self, filter_num, stride=1,norm="batch_norm"):
+    def __init__(self, filter_num, bottleneck_channels,stride=1,norm="batch_norm"):
         super(BottleNeckBlock, self).__init__()
-        self.conv1 = tf.keras.layers.Conv2D(filters=filter_num,
+        self.conv1 = tf.keras.layers.Conv2D(filters=bottleneck_channels,
                                             kernel_size=(1, 1),
                                             strides=1,
                                             padding="same",
                                             use_bias=False)
-        self.bn1 = get_norm(norm)
-        self.conv2 = tf.keras.layers.Conv2D(filters=filter_num,
+        self.bn1 = get_norm(norm)()
+        self.conv2 = tf.keras.layers.Conv2D(filters=bottleneck_channels,
                                             kernel_size=(3, 3),
                                             strides=stride,
                                             padding="same",
                                             use_bias=False)
-        self.bn2 = get_norm(norm)
-        self.conv3 = tf.keras.layers.Conv2D(filters=filter_num * 4,
+        self.bn2 = get_norm(norm)()
+        self.conv3 = tf.keras.layers.Conv2D(filters=filter_num,
                                             kernel_size=(1, 1),
                                             strides=1,
                                             padding="same",
                                             use_bias=False)
         self.bn3 = get_norm(norm)
         self.downsample = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(filters=filter_num * 4,
+            tf.keras.layers.Conv2D(filters=filter_num,
                                    kernel_size=(1, 1),
                                    strides=stride,
                                    use_bias=False),
-            get_norm(norm)
+            get_norm(norm)()
         ])
+
+        self.out_channels = filter_num
+        self.stride = stride
 
     def call(self, inputs, training=None):
         residual = self.downsample(inputs, training=training)
@@ -147,18 +166,22 @@ class ResNet(BackBone):
         self.stem = stem
         self.nclasses = nclasses
         self.stage_names,self.stages = [],[]
+
+        current_stride = self.stem.stride
+        self._out_feature_strides = {"stem": current_stride}
         self._out_feature_channels = {"stem": self.stem.out_channels}
 
         if out_layers is not None:
             nstages = max([{"res2": 1, "res3": 2, "res4": 3, "res5": 4}.get(f, 0) for f in out_layers])
             stages = stages[:nstages]
-
         for i,blocks in enumerate(stages):
             stage_name = f"res{i+2}"
-            stage = tf.keras.Sequential(blocks)
             self.stage_names.append(stage_name)
-            self.stages.append(stage)
-            self._out_feature_channels[stage_name]  = blocks[-1].out_channels
+            self.stages.append(blocks)
+            self._out_feature_strides[stage_name] = current_stride = int(
+                current_stride * np.prod([k.stride for k in blocks.layers])
+            )
+            self._out_feature_channels[stage_name]  = blocks.layers[-1].out_channels
 
         if nclasses is not None:
             self.avgpool = GlobalAveragePooling2D()
@@ -173,14 +196,14 @@ class ResNet(BackBone):
 
 
     @staticmethod
-    def make_layer(block_class,nlayers,filters,stride=1):
+    def make_layer(block_class,nlayers,filters,stride=1,**kwargs):
         """Create a list of layers that forms one ResNet Stage
         """
         block = tf.keras.Sequential()
-        block.add(block_class(filters,stride=stride))
+        block.add(block_class(filters,stride=stride,**kwargs))
 
         for _ in range(1,nlayers):
-            block.add(block_class(filters,stride=1))
+            block.add(block_class(filters,stride=1,**kwargs))
 
         return block
 
@@ -231,7 +254,10 @@ class ResNet(BackBone):
 
     def output_shape(self):
         return {
-            name: self._out_feature_channels[name] for name in self._out_layers
+            name: ShapeSpec(
+                channels=self._out_feature_channels[name],
+                stride=self._out_feature_strides[name]
+            ) for name in self._out_layers
         }
 
 
@@ -274,7 +300,7 @@ class ResNet(BackBone):
                     block_class=block_class,
                     nlayers=n,
                     filters=o,
-                    stride=s
+                    stride=s,
                     **kwargs,
                 )
             )
@@ -312,3 +338,11 @@ def build_resnet_backbone(config):
     stages = ResNet.make_default_stages(depth,block_class)
 
     return ResNet(stem, stages, out_layers=out_features, freeze_at=freeze_at)
+
+
+
+def make_stage(*args, **kwargs):
+    """
+    Deprecated alias for backward compatibiltiy.
+    """
+    return ResNet.make_layer(*args, **kwargs)

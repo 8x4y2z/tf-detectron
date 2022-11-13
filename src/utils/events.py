@@ -4,7 +4,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 import tensorflow as tf
 
-from src.utils.history_buffer import HistoryBuffer
+from .history_buffer import HistoryBuffer
 
 _CURRENT_STORAGE_STACK = []
 

@@ -2,7 +2,7 @@
 
 from .build import build_backbone, BACKBONE_REGISTRY  # noqa F401 isort:skip
 
-from .backbone import BackBone
+from .backbone import Backbone
 from .fpn import FPN
 from .resnet import (
     Stem,
@@ -15,7 +15,7 @@ from .resnet import (
 
 __all__ = ["build_backbone",
            "BACKBONE_REGISTRY",
-           "BackBone",
+           "Backbone",
            "FPN",
            "Stem",
            "ResNet",

@@ -1,17 +1,23 @@
 # -*- coding: utf-8 -*-
 import math
-import tensorflow as tf
-from tensorflow.keras.layers import UpSampling2D
-from .backbone import BackBone
-from src.core.norms import get_norm
-from src.core.layers import CConv2D
+import torch
+from torch import nn
+import torch.nn.functional as F
+
+from .backbone import Backbone
+from .resnet import build_resnet_backbone
+from .build import BACKBONE_REGISTRY
+from src.core.layers import get_norm
+from src.core.layers import Conv2d
 from src.structures import ShapeSpec
 
-class FPN(BackBone):
+class FPN(Backbone):
     """
     This module implements :paper:`FPN`.
     It creates pyramid features built on top of some input feature maps.
     """
+
+    _fuse_type: torch.jit.Final[str]
 
     def __init__(
         self,
@@ -48,7 +54,7 @@ class FPN(BackBone):
             square_pad (int): If > 0, require input images to be padded to specific square size.
         """
         super(FPN, self).__init__()
-        assert isinstance(bottom_up, BackBone)
+        assert isinstance(bottom_up, Backbone)
         assert in_features, in_features
 
         # Feature map strides and channels from the bottom up network (e.g. ResNet)
@@ -62,21 +68,27 @@ class FPN(BackBone):
 
         use_bias = norm == ""
         for idx, in_channels in enumerate(in_channels_per_feature):
-            lateral_norm = get_norm(norm)
-            output_norm = get_norm(norm)
-            stage = int(math.log2(strides[idx]))
-            lateral_conv = CConv2D(
-                filters= out_channels, kernel_size=1, use_bias=use_bias,norm=lateral_norm,
-                name="fpn_lateral{}".format(stage)
+            lateral_norm = get_norm(norm, out_channels)
+            output_norm = get_norm(norm, out_channels)
+
+            lateral_conv = Conv2d(
+                in_channels, out_channels, kernel_size=1, bias=use_bias, norm=lateral_norm
             )
-            output_conv = tf.keras.layers.Conv2D(
+            output_conv = Conv2d(
+                out_channels,
                 out_channels,
                 kernel_size=3,
-                padding="same",
-                use_bias=use_bias,
+                stride=1,
+                padding=1,
+                bias=use_bias,
                 norm=output_norm,
-                name="fpn_output{}".format(stage)
             )
+            # weight_init.c2_xavier_fill(lateral_conv)
+            # weight_init.c2_xavier_fill(output_conv)
+            stage = int(math.log2(strides[idx]))
+            self.add_module("fpn_lateral{}".format(stage), lateral_conv)
+            self.add_module("fpn_output{}".format(stage), output_conv)
+
             lateral_convs.append(lateral_conv)
             output_convs.append(output_conv)
         # Place convs into top-down order (from low to high resolution)
@@ -108,7 +120,7 @@ class FPN(BackBone):
     def padding_constraints(self):
         return {"square_size": self._square_pad}
 
-    def call(self, x,*args,**kwargs):
+    def forward(self, x):
         """
         Args:
             input (dict[str->Tensor]): mapping feature map name (e.g., "res5") to
@@ -123,18 +135,20 @@ class FPN(BackBone):
         """
         bottom_up_features = self.bottom_up(x)
         results = []
-        prev_features = self.lateral_convs[0](bottom_up_features[self.in_features[-1]],*args,**kwargs)
-        results.append(self.output_convs[0](prev_features,*args,**kwargs))
+        prev_features = self.lateral_convs[0](bottom_up_features[self.in_features[-1]])
+        results.append(self.output_convs[0](prev_features))
 
         # Reverse feature maps into top-down order (from low to high resolution)
         for idx, (lateral_conv, output_conv) in enumerate(
             zip(self.lateral_convs, self.output_convs)
         ):
+            # Slicing of ModuleList is not supported https://github.com/pytorch/pytorch/issues/47336
+            # Therefore we loop over all modules but skip the first one
             if idx > 0:
                 features = self.in_features[-idx - 1]
                 features = bottom_up_features[features]
-                top_down_features = UpSampling2D(2)(prev_features)
-                lateral_features = lateral_conv(features,*args,**kwargs)
+                top_down_features = F.interpolate(prev_features, scale_factor=2.0, mode="nearest")
+                lateral_features = lateral_conv(features)
                 prev_features = lateral_features + top_down_features
                 if self._fuse_type == "avg":
                     prev_features /= 2
@@ -157,7 +171,6 @@ class FPN(BackBone):
             for name in self._out_features
         }
 
-
 def _assert_strides_are_log2_contiguous(strides):
     """
     Assert that each stride is 2x times its preceding stride, i.e. "contiguous in log2".
@@ -167,8 +180,24 @@ def _assert_strides_are_log2_contiguous(strides):
             stride, strides[i - 1]
         )
 
+
+class LastLevelMaxPool(nn.Module):
+    """
+    This module is used in the original FPN to generate a downsampled
+    P6 feature from P5.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.num_levels = 1
+        self.in_feature = "p5"
+
+    def forward(self, x):
+        return [F.max_pool2d(x, kernel_size=1, stride=2, padding=0)]
+
+
 @BACKBONE_REGISTRY.register()
-def build_resnet_fpn_backbone(cfg, input_shape: ShapeSpec):
+def build_resnet_fpn_backbone(cfg,input_shape: ShapeSpec):
     """
     Args:
         cfg: a detectron2 CfgNode
@@ -176,7 +205,7 @@ def build_resnet_fpn_backbone(cfg, input_shape: ShapeSpec):
     Returns:
         backbone (Backbone): backbone module, must be a subclass of :class:`Backbone`.
     """
-    bottom_up = build_resnet_backbone(cfg, input_shape)
+    bottom_up = build_resnet_backbone(cfg,input_shape)
     in_features = cfg.MODEL.FPN.IN_FEATURES
     out_channels = cfg.MODEL.FPN.OUT_CHANNELS
     backbone = FPN(
