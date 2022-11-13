@@ -4,6 +4,7 @@ from typing import Tuple,List, Union
 from enum import IntEnum, unique
 import numpy as np
 import torch
+from torch import device
 
 _RawBoxType = Union[List[float], Tuple[float, ...], torch.Tensor, np.ndarray]
 
@@ -136,15 +137,21 @@ class Boxes:
         tensor (torch.Tensor): float matrix of Nx4. Each row is (x1, y1, x2, y2).
     """
 
-    def __init__(self, tensor):
+    def __init__(self, tensor: torch.Tensor):
         """
         Args:
             tensor (Tensor[float]): a Nx4 matrix.  Each row is (x1, y1, x2, y2).
         """
-        if not isinstance(tensor, tf.Tensor):
-            tensor = tf.convert_to_tensor(tensor, dtype=tf.float32)
+        if not isinstance(tensor, torch.Tensor):
+            tensor = torch.as_tensor(tensor, dtype=torch.float32, device=torch.device("cpu"))
         else:
-            tensor = tf.cast(tensor,tf.float32)
+            tensor = tensor.to(torch.float32)
+        if tensor.numel() == 0:
+            # Use reshape, so we don't end up creating a new tensor that does not depend on
+            # the inputs (and consequently confuses jit)
+            tensor = tensor.reshape((-1, 4)).to(dtype=torch.float32)
+        assert tensor.dim() == 2 and tensor.size(-1) == 4, tensor.size()
+
         self.tensor = tensor
 
     def clone(self) -> "Boxes":
@@ -156,8 +163,11 @@ class Boxes:
         """
         return Boxes(self.tensor.clone())
 
+    def to(self, device: torch.device):
+        # Boxes are assumed float32 and does not support to(dtype)
+        return Boxes(self.tensor.to(device=device))
 
-    def area(self) -> tf.Tensor:
+    def area(self) -> torch.Tensor:
         """
         Computes the area of all the boxes.
 
@@ -176,14 +186,15 @@ class Boxes:
         Args:
             box_size (height, width): The clipping box's size.
         """
+        assert torch.isfinite(self.tensor).all(), "Box tensor contains infinite or NaN!"
         h, w = box_size
-        x1 = tf.clip_by_value(self.tensor[:, 0],0,w)
-        y1 = tf.clip_by_value(self.tensor[:, 1],0,h)
-        x2 = tf.clip_by_value(self.tensor[:, 2],0,w)
-        y2 = tf.clip_by_value(self.tensor[:, 3],0,h)
-        self.tensor = tf.stack((x1, y1, x2, y2), axis=-1)
+        x1 = self.tensor[:, 0].clamp(min=0, max=w)
+        y1 = self.tensor[:, 1].clamp(min=0, max=h)
+        x2 = self.tensor[:, 2].clamp(min=0, max=w)
+        y2 = self.tensor[:, 3].clamp(min=0, max=h)
+        self.tensor = torch.stack((x1, y1, x2, y2), dim=-1)
 
-    def nonempty(self, threshold: float = 0.0) -> tf.Tensor:
+    def nonempty(self, threshold: float = 0.0) -> torch.Tensor:
         """
         Find boxes that are non-empty.
         A box is considered empty, if either of its side is no larger than threshold.
@@ -218,9 +229,9 @@ class Boxes:
         subject to Pytorch's indexing semantics.
         """
         if isinstance(item, int):
-            return Boxes(tf.reshape(self.tensor[item],(1,-1)))
+            return Boxes(self.tensor[item].view(1, -1))
         b = self.tensor[item]
-        assert b.ndim == 2, "Indexing on Boxes with {} failed to return a matrix!".format(item)
+        assert b.dim() == 2, "Indexing on Boxes with {} failed to return a matrix!".format(item)
         return Boxes(b)
 
     def __len__(self) -> int:
@@ -229,7 +240,7 @@ class Boxes:
     def __repr__(self) -> str:
         return "Boxes(" + str(self.tensor) + ")"
 
-    def inside_box(self, box_size: Tuple[int, int], boundary_threshold: int = 0) -> tf.Tensor:
+    def inside_box(self, box_size: Tuple[int, int], boundary_threshold: int = 0) -> torch.Tensor:
         """
         Args:
             box_size (height, width): Size of the reference box.
@@ -248,7 +259,7 @@ class Boxes:
         )
         return inds_inside
 
-    def get_centers(self) -> tf.Tensor:
+    def get_centers(self) -> torch.Tensor:
         """
         Returns:
             The box centers in a Nx2 array of (x, y).
@@ -275,19 +286,20 @@ class Boxes:
         """
         assert isinstance(boxes_list, (list, tuple))
         if len(boxes_list) == 0:
-            return cls(tf.experimental.numpy.empty(0))
+            return cls(torch.empty(0))
         assert all([isinstance(box, Boxes) for box in boxes_list])
 
         # use torch.cat (v.s. layers.cat) so the returned boxes never share storage with input
-        cat_boxes = cls(tf.concat([b.tensor for b in boxes_list], 0))
+        cat_boxes = cls(torch.cat([b.tensor for b in boxes_list], dim=0))
         return cat_boxes
 
     @property
-    def device(self):
+    def device(self) -> device:
         return self.tensor.device
 
     # type "Iterator[torch.Tensor]", yield, and iter() not supported by torchscript
     # https://github.com/pytorch/pytorch/issues/18627
+    @torch.jit.unused
     def __iter__(self):
         """
         Yield a box as a Tensor of shape (4,) at a time.
@@ -295,7 +307,8 @@ class Boxes:
         yield from self.tensor
 
 
-def pairwise_iou(boxes1: Boxes, boxes2: Boxes) -> tf.Tensor:
+
+def pairwise_iou(boxes1: Boxes, boxes2: Boxes) -> torch.Tensor:
     """
     Given two lists of boxes of size N and M, compute the IoU
     (intersection over union) between **all** N x M pairs of boxes.
@@ -312,15 +325,14 @@ def pairwise_iou(boxes1: Boxes, boxes2: Boxes) -> tf.Tensor:
     inter = pairwise_intersection(boxes1, boxes2)
 
     # handle empty boxes
-    iou = tf.where(
+    iou = torch.where(
         inter > 0,
         inter / (area1[:, None] + area2 - inter),
-        tf.zeros(1, dtype=inter.dtype),
+        torch.zeros(1, dtype=inter.dtype, device=inter.device),
     )
     return iou
 
-
-def pairwise_intersection(boxes1: Boxes, boxes2: Boxes) -> tf.Tensor:
+def pairwise_intersection(boxes1: Boxes, boxes2: Boxes) -> torch.Tensor:
     """
     Given two lists of boxes of size N and M,
     compute the intersection area between __all__ N x M pairs of boxes.
@@ -333,10 +345,10 @@ def pairwise_intersection(boxes1: Boxes, boxes2: Boxes) -> tf.Tensor:
         Tensor: intersection, sized [N,M].
     """
     boxes1, boxes2 = boxes1.tensor, boxes2.tensor
-    width_height = tf.min(boxes1[:, None, 2:], boxes2[:, 2:]) - tf.max(
+    width_height = torch.min(boxes1[:, None, 2:], boxes2[:, 2:]) - torch.max(
         boxes1[:, None, :2], boxes2[:, :2]
     )  # [N,M,2]
 
-    width_height = tf.experimental.numpy.clip(width_height,0,None)  # [N,M,2]
-    intersection = tf.math.reduce_prod(width_height,axis=2)  # [N,M]
+    width_height.clamp_(min=0)  # [N,M,2]
+    intersection = width_height.prod(dim=2)  # [N,M]
     return intersection
