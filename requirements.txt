@@ -1,4 +1,12 @@
-numpy==1.18
-torch==1.8.2 torchvision==0.9.2 torchaudio==0.8.2 --extra-index-url https://download.pytorch.org/whl/lts/1.8/cu102
+--find-links https://download.pytorch.org/whl/torch_stable.html
+numpy==1.19
+torch==1.9.0+cu102
+torchvision==0.10.0+cu102
 fvcore
 yacs
+cloudpickle
+omegaconf
+matplotlib
+fairscale
+timm
+tensorboard
