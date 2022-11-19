@@ -184,28 +184,31 @@ def createMasterAnno(images_meta,annos):
 
 def splitTrainVal(master_train):
     master_val = {}
-    train_imgs, train_img_names, val_imgs, val_img_names = [], [], [], []
+    train_annos, val_annos = [], []
 
-    train_annos = random.sample(
-        master_train["annotations"],
-        int(TRAIN_SPLIT*len(master_train["annotations"]))
+    train_imgs = random.sample(
+        master_train["images"],int(TRAIN_SPLIT*len(master_train["images"]))
     )
-    train_anno_ids, train_img_ids = zip(
-        *((anno["id"],anno["image_id"]) for anno in train_annos)
+
+    train_img_ids, train_img_names = zip(
+        *((img_d["id"],img_d["file_name"]) for img_d in train_imgs)
     )
-    train_anno_ids, train_img_ids = set(train_anno_ids), set(train_img_ids)
 
-    val_annos = [
-        anno for anno in master_train["annotations"]
-        if anno["id"] not in train_anno_ids]
 
-    for img_d in master_train["images"]:
-        if img_d["id"] in train_img_ids:
-            train_imgs.append(img_d)
-            train_img_names.append(img_d["file_name"])
+    train_img_ids, train_img_names = set(train_img_ids), set(train_img_names)
+
+    val_imgs, val_img_names = zip(
+        *((img_d,img_d["file_name"]) for img_d in master_train["images"]
+         if img_d["id"] not in train_img_ids)
+    )
+    val_img_names = set(val_img_names)
+
+    for anno in master_train["annotations"]:
+        if anno["image_id"] in train_img_ids:
+            train_annos.append(anno)
         else:
-            val_imgs.append(img_d)
-            val_img_names.append(img_d["file_name"])
+            val_annos.append(anno)
+
 
     master_train["images"] = train_imgs
     master_train["categories"] = CATS_META
