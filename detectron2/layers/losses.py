@@ -1,5 +1,6 @@
 import math
 import torch
+import torch.nn.functional as F
 
 
 def diou_loss(
@@ -130,4 +131,50 @@ def ciou_loss(
     elif reduction == "sum":
         loss = loss.sum()
 
+    return loss
+
+def modified_focal_loss(pred,gt,alpha,beta):
+    """Implements modified focal loss for centernet:
+    http://arxiv.org/abs/1904.07850
+    """
+    pos_idx = (gt == 1).to(dtype=torch.float32)
+    neg_idx = (gt < 1).to(dtype=torch.float32)
+    neg_weights = (1 - gt)** beta
+
+    loss = 0
+    num_pos = pos_idx.sum()
+    pos_loss = torch.log(pred) * ((1 - pred)** alpha) * pos_idx
+    pos_loss = (pos_loss).sum()
+    neg_loss = torch.log(1 - pred) * (pred**alpha) * neg_weights * neg_idx
+    neg_loss = (neg_loss).sum()
+    if num_pos == 0:
+        loss = loss - neg_loss
+    else:
+        loss = loss - (pos_loss + neg_loss) / num_pos
+    return loss
+
+def _gather_feat(feat, ind, mask=None):
+    dim  = feat.size(2)
+    ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
+    feat = feat.gather(1, ind)
+    if mask is not None:
+        mask = mask.unsqueeze(2).expand_as(feat)
+        feat = feat[mask]
+        feat = feat.view(-1, dim)
+    return feat
+
+def _transpose_and_gather_feat(feat, ind):
+    feat = feat.permute(0, 2, 3, 1).contiguous()
+    feat = feat.view(feat.size(0), -1, feat.size(3))
+    feat = _gather_feat(feat, ind)
+    return feat
+
+def reg1loss(output, mask, ind, target):
+    """Reression loss implemented in http://arxiv.org/abs/1904.07850
+    """
+    pred = _transpose_and_gather_feat(output, ind)
+    mask = mask.unsqueeze(2).expand_as(pred).float()
+    # loss = F.l1_loss(pred * mask, target * mask, reduction='elementwise_mean')
+    loss = F.l1_loss(pred * mask, target * mask, size_average=False)
+    loss = loss / (mask.sum() + 1e-4)
     return loss

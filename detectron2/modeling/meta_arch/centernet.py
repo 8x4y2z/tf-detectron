@@ -3,12 +3,15 @@ from typing import Tuple, Optional, List, Dict
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from detectron2.config.config import configurable
 from detectron2.modeling.backbone import Backbone, build_backbone
 from detectron2.modeling.proposal_generator import build_proposal_generator
 from detectron2.layers import move_device_like
 from detectron2.utils.events import get_event_storage
+from detectron2.structures import Instances, ImageList
+from detectron2.layers import modified_focal_loss, reg1loss
 from .build import META_ARCH_REGISTRY
 
 
@@ -22,6 +25,10 @@ class Centernet(nn.Module):
                  pixel_mean: Tuple[float],
                  pixel_std: Tuple[float],
                  input_format: Optional[str] = None,
+                 hm_weight: float,
+                 reg_weight: float,
+                 wh_weight: float,
+                 nclasses: int,
                  vis_period: int = 0,
                  ):
         super(Centernet, self).__init__()
@@ -38,6 +45,11 @@ class Centernet(nn.Module):
             self.pixel_mean.shape == self.pixel_std.shape
         ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
 
+        self.hm_weight = hm_weight
+        self.wh_weight = wh_weight
+        self.reg_weight = reg_weight
+        self.nclasses = nclasses
+
 
 
     @classmethod
@@ -50,6 +62,7 @@ class Centernet(nn.Module):
             "vis_period": cfg.VIS_PERIOD,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
+            "nclasses": cfg.MODEL.ROI_HEADS.NUM_CLASSES
         }
 
 
@@ -95,16 +108,45 @@ class Centernet(nn.Module):
 
         features = self.backbone(images.tensor)
 
-        proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
+        out_features = self.proposal_generator(features)
 
         if self.vis_period > 0:
             storage = get_event_storage()
             if storage.iter % self.vis_period == 0:
-                self.visualize_training(batched_inputs, proposals)
+                self.visualize_training(batched_inputs, out_features)
 
-        losses = {}
-        losses.update(proposal_losses)
+        losses = self._combined_losses(out_features, gt_instances)
+
         return losses
+
+    def _combined_losses(self,out_features, gt_instances):
+        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode_gt(self.nclases,gt_instances, out_features)
+        heatmap, reg, wh = torch.split(out_features, [self.nclasses, 2, 2], 1)
+        heatmap = torch.clamp(F.sigmoid(heatmap), min=1e-4, max=1.0 - 1e-4)
+        hm_loss = modified_focal_loss(heatmap,gt_hm, self.focal_loss_alpha, self.focal_loss_beta)
+        reg_loss = reg1loss(reg, gt_reg_mask, gt_indices, gt_reg)
+        wh_loss = reg1loss(wh,gt_reg_mask,gt_indices,gt_wh)
+
+        loss = self.hm_weight * hm_loss + self.reg_weight * reg_loss + self.wh_weight * wh_loss
+        return loss
+
+    @staticmethod
+    def _decode(nclasses:int,gt_instances:List[Instances], out_features: torch.Tensor):
+        gt_hm = torch.zeros(
+            (len(gt_instances),nclasses,*out_features.shape[-2:]),
+            dtype=torch.float32,device=gt_instances[0].device
+        )
+        gt_reg = torch.zeros(
+            (len(gt_instances),)
+
+        )
+
+
+
+        return gt_hm
+
+
+
 
     def inference(
         self,

@@ -35,7 +35,7 @@ class CenternetHeads(nn.Module):
         reg = self.reg_layer(x)
         wh = self.wh_layer(x)
 
-        return [heatmap, reg, wh]
+        return torch.concat([heatmap, reg, wh],1)
 
 
     @classmethod
