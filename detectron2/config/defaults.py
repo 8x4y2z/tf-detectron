@@ -245,7 +245,7 @@ _C.MODEL.RPN.NMS_THRESH = 0.7
 _C.MODEL.RPN.CONV_DIMS = [-1]
 
 # For centernet
-# _C.MODEL.PROPOSAL_GENERATOR.NHEADS = 64
+_C.MODEL.PROPOSAL_GENERATOR.NHEADS = 64
 # ---------------------------------------------------------------------------- #
 # ROI HEADS options
 # ---------------------------------------------------------------------------- #

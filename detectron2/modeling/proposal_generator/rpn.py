@@ -257,7 +257,6 @@ class RPN(nn.Module):
 
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
-        import pdb; pdb.set_trace()
         in_features = cfg.MODEL.RPN.IN_FEATURES
         ret = {
             "in_features": in_features,

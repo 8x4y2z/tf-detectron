@@ -6,6 +6,7 @@
           (setq python-shell-interpreter "~/Documents/projects/envs/pytorch/bin/python")
           (setq flycheck-python-pylint-executable "~/Documents/projects/envs/pytorch/bin/python")
           (setenv "PYTHONPATH" (concat (getenv "PYTHONPATH") ":/home/pupil/Documents/upgrad/msc"))
+          (setenv "PYTHONPATH" (concat (getenv "PYTHONPATH") ":/home/pupil/Documents/projects/learn/cocoapi/PythonAPI"))
           )
         )
  ))
