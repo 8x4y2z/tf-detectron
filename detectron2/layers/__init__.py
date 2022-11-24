@@ -22,5 +22,6 @@ from .wrappers import (
 from .blocks import CNNBlockBase, DepthwiseSeparableConv2d
 from .aspp import ASPP
 from .losses import ciou_loss, diou_loss, modified_focal_loss, reg1loss
+from .misc_ops import gaussian_radius, draw_umich_gaussian
 
 __all__ = [k for k in globals().keys() if not k.startswith("_")]

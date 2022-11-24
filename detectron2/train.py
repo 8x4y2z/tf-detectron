@@ -116,6 +116,8 @@ def setup(args):
     cfg = get_cfg()
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    cfg.OUTPUT_DIR = "./centernet_out"
+    cfg.INPUT.RANDOM_FLIP = "none"
     cfg.freeze()
     default_setup(cfg, args)
     return cfg

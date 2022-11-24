@@ -6,7 +6,9 @@ from torch import nn
 from detectron2.layers.wrappers import Conv2d
 from detectron2.config.config import configurable
 
+from .build import PROPOSAL_GENERATOR_REGISTRY
 
+@PROPOSAL_GENERATOR_REGISTRY.register()
 class CenternetHeads(nn.Module):
 
 
@@ -39,11 +41,11 @@ class CenternetHeads(nn.Module):
 
 
     @classmethod
-    def from_config(cls, cfg):
+    def from_config(cls, cfg,input_shape):
         return {
-            "in_channels":None,
-            "nheads_in":None,
-            "hm_heads":None,
-            "rg_heads":None,
-            "wh_heads":None,
+            "in_channels":input_shape[1],
+            "nheads_in":cfg.PROPOSAL_GENERATOR.NHEADS,
+            "hm_heads":cfg.MODEL.ROI_HEADS.NUM_CLASSES,
+            "rg_heads":2,
+            "wh_heads":2,
         }

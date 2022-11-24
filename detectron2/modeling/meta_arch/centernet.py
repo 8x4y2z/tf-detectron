@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from detectron2.config.config import configurable
 from detectron2.modeling.backbone import Backbone, build_backbone
 from detectron2.modeling.proposal_generator import build_proposal_generator
-from detectron2.layers import move_device_like
+from detectron2.layers import move_device_like, gaussian_radius, draw_umich_gaussian
 from detectron2.utils.events import get_event_storage
 from detectron2.structures import Instances, ImageList
 from detectron2.layers import modified_focal_loss, reg1loss
@@ -29,6 +29,7 @@ class Centernet(nn.Module):
                  reg_weight: float,
                  wh_weight: float,
                  nclasses: int,
+                 max_boxes:int,
                  vis_period: int = 0,
                  ):
         super(Centernet, self).__init__()
@@ -49,6 +50,7 @@ class Centernet(nn.Module):
         self.wh_weight = wh_weight
         self.reg_weight = reg_weight
         self.nclasses = nclasses
+        self.max_boxes = max_boxes
 
 
 
@@ -62,7 +64,8 @@ class Centernet(nn.Module):
             "vis_period": cfg.VIS_PERIOD,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
-            "nclasses": cfg.MODEL.ROI_HEADS.NUM_CLASSES
+            "nclasses": cfg.MODEL.ROI_HEADS.NUM_CLASSES,
+            "max_boxes": cfg.TEST.DETECTIONS_PER_IMAGE
         }
 
 
@@ -130,21 +133,68 @@ class Centernet(nn.Module):
         loss = self.hm_weight * hm_loss + self.reg_weight * reg_loss + self.wh_weight * wh_loss
         return loss
 
-    @staticmethod
-    def _decode(nclasses:int,gt_instances:List[Instances], out_features: torch.Tensor):
+    def _decode(self,nclasses:int,gt_instances:List[Instances], out_features: torch.Tensor):
         gt_hm = torch.zeros(
             (len(gt_instances),nclasses,*out_features.shape[-2:]),
             dtype=torch.float32,device=gt_instances[0].device
         )
         gt_reg = torch.zeros(
-            (len(gt_instances),)
-
+            (len(gt_instances),2,self.max_boxes),
+            dtype=torch.float32,device=gt_instances[0].device
+        )
+        gt_wh = torch.zeros(
+            (len(gt_instances), 2, self.max_boxes),
+            dtype=torch.float32,device=gt_instances[0].device
+                            )
+        gt_reg_mask = torch.zeros(
+            (len(gt_instances), self.max_boxes),
+            dtype=torch.float32,device=gt_instances[0].device
+        )
+        gt_indices = torch.zeros(
+            (len(gt_instances), self.max_boxes),
+            dtype=torch.float32,device=gt_instances[0].device
         )
 
+        for i, instance in enumerate(gt_instances):
+            label = label[label[:, 4] != -1]
+            hm, reg, wh, reg_mask, ind = self.__decode_label(instance)
+            gt_hm[i, :, :, :] = hm
+            gt_reg[i, :, :] = reg
+            gt_wh[i, :, :] = wh
+            gt_reg_mask[i, :] = reg_mask
+            gt_indices[i, :] = ind
 
 
-        return gt_hm
+        return gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices
 
+    def _decode_label(self, instance:Instances):
+        hm = torch.zeros(
+            (self.nclasses, *(tuple(x//self.downsampling for x in instance.image_size))),
+            dtype=torch.float32, device=instance.device)
+        reg = torch.zeros((2,self.max_boxes), dtype=torch.float32,
+                          device=instance.boxes.device)
+        wh = torch.zeros((2,self.max_boxes),
+                         dtype=torch.float32,device=instance.device)
+        reg_mask = torch.zeros((self.max_boxes),
+                               dtype=torch.float32, device=instance.device)
+        ind = torch.zeros((self.max_boxes),
+                          dtype=torch.float32, device=instance.device)
+        instance.boxes.scale((1/self.downsampling, 1/self.downsampling))
+        for i,box in enumerate(instance.boxes):
+            xmin,ymin,xmax,ymax = box
+            class_id = instance.class_id[i]
+            h, w = int(ymax - ymin), int(xmax - xmin)
+            radius = gaussian_radius((h, w))
+            radius = max(0, int(radius))
+            ctr_x, ctr_y = (xmin + xmax) / 2, (ymin + ymax) / 2
+            center_point = torch.tensor([ctr_x, ctr_y], dtype=torch.float32, device=instance.boces.device)
+            center_point_int = center_point.to(torch.int32)
+            draw_umich_gaussian(hm[:, :, class_id], center_point_int, radius)
+            reg[i] = center_point - center_point_int
+            wh[i] = 1. * w, 1. * h
+            reg_mask[i] = 1
+            ind[i] = center_point_int[1] * self.features_shape[1] + center_point_int[0]
+        return hm, reg, wh, reg_mask, ind
 
 
 

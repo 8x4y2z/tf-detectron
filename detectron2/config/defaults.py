@@ -244,6 +244,8 @@ _C.MODEL.RPN.NMS_THRESH = 0.7
 # Set this to -1 to use the same number of output channels as input channels.
 _C.MODEL.RPN.CONV_DIMS = [-1]
 
+# For centernet
+# _C.MODEL.PROPOSAL_GENERATOR.NHEADS = 64
 # ---------------------------------------------------------------------------- #
 # ROI HEADS options
 # ---------------------------------------------------------------------------- #
