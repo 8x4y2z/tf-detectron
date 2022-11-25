@@ -1,7 +1,7 @@
 MODEL:
   META_ARCHITECTURE: "Centernet"
   BACKBONE:
-    NAME: build_resnet_backbone
+    NAME: build_resnet_fpn_backbone
   RESNETS:
     OUT_FEATURES: ["res2", "res3", "res4", "res5"]
   FPN:
@@ -10,6 +10,9 @@ MODEL:
     MIN_SIZE: 0
     NAME: CenternetHeads
     NHEADS: 64
+    HM_WEIGHT: 1.0
+    WH_WEIGHT: 0.1
+    REG_WEIGHT: 1.0
   ROI_HEADS:
     NUM_CLASSES: 7
 DATASETS:

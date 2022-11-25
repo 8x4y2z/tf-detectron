@@ -164,6 +164,10 @@ _C.MODEL.PROPOSAL_GENERATOR.NAME = "RPN"
 # (a the scale used during training or inference)
 _C.MODEL.PROPOSAL_GENERATOR.MIN_SIZE = 0
 
+_C.MODEL.PROPOSAL_GENERATOR.HM_WEIGHT = 1.0
+_C.MODEL.PROPOSAL_GENERATOR.WH_WEIGHT = 0.1
+_C.MODEL.PROPOSAL_GENERATOR.REG_WEIGHT = 1.0
+
 
 # ---------------------------------------------------------------------------- #
 # Anchor generator options

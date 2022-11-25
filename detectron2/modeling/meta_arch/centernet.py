@@ -65,7 +65,10 @@ class Centernet(nn.Module):
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
             "nclasses": cfg.MODEL.ROI_HEADS.NUM_CLASSES,
-            "max_boxes": cfg.TEST.DETECTIONS_PER_IMAGE
+            "max_boxes": cfg.TEST.DETECTIONS_PER_IMAGE,
+            "hm_weight": cfg.MODEL.PROPOSAL_GENERATOR.HM_WEIGHT,
+            "reg_weight": cfg.MODEL.PROPOSAL_GENERATOR.REG_WEIGHT,
+            "wh_weight": cfg.MODEL.PROPOSAL_GENERATOR.WH_WEIGHT,
         }
 
 
