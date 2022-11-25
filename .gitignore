@@ -12,3 +12,6 @@ datasets/
 # files
 library.bib
 *.pyc
+
+
+.dir-locals.el
