@@ -37,6 +37,29 @@ from detectron2.evaluation import (
     verify_results,
 )
 from detectron2.modeling import GeneralizedRCNNWithTTA
+from detectron2.data.datasets import register_coco_instances
+
+register_coco_instances(
+    "lisa-train",
+    {},
+    "datasets/lisa/train.json",
+    "datasets/lisa/train"
+)
+
+register_coco_instances(
+    "lisa-val",
+    {},
+    "datasets/lisa/val.json",
+    "datasets/lisa/val"
+)
+
+
+register_coco_instances(
+    "lisa-test",
+    {},
+    "datasets/lisa/test.json",
+    "datasets/lisa/test"
+)
 
 
 def build_evaluator(cfg, dataset_name, output_folder=None):

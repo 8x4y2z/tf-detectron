@@ -33,7 +33,7 @@ class Centernet(nn.Module):
                  vis_period: int = 0,
                  ):
         super(Centernet, self).__init__()
-        self.backbone = backbone,
+        self.backbone = backbone
         self.proposal_generator = proposal_generator
         self.input_format = input_format
         self.vis_period = vis_period
@@ -126,7 +126,7 @@ class Centernet(nn.Module):
         return losses
 
     def _combined_losses(self,out_features, gt_instances):
-        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode_gt(self.nclases,gt_instances, out_features)
+        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode(self.nclasses,gt_instances, out_features)
         heatmap, reg, wh = torch.split(out_features, [self.nclasses, 2, 2], 1)
         heatmap = torch.clamp(F.sigmoid(heatmap), min=1e-4, max=1.0 - 1e-4)
         hm_loss = modified_focal_loss(heatmap,gt_hm, self.focal_loss_alpha, self.focal_loss_beta)
@@ -139,27 +139,27 @@ class Centernet(nn.Module):
     def _decode(self,nclasses:int,gt_instances:List[Instances], out_features: torch.Tensor):
         gt_hm = torch.zeros(
             (len(gt_instances),nclasses,*out_features.shape[-2:]),
-            dtype=torch.float32,device=gt_instances[0].device
+            dtype=torch.float32,device=gt_instances[0].gt_boxes.device
         )
         gt_reg = torch.zeros(
             (len(gt_instances),2,self.max_boxes),
-            dtype=torch.float32,device=gt_instances[0].device
+            dtype=torch.float32,device=gt_instances[0].gt_boxes.device
         )
         gt_wh = torch.zeros(
             (len(gt_instances), 2, self.max_boxes),
-            dtype=torch.float32,device=gt_instances[0].device
+            dtype=torch.float32,device=gt_instances[0].gt_boxes.device
                             )
         gt_reg_mask = torch.zeros(
             (len(gt_instances), self.max_boxes),
-            dtype=torch.float32,device=gt_instances[0].device
+            dtype=torch.float32,device=gt_instances[0].gt_boxes.device
         )
         gt_indices = torch.zeros(
             (len(gt_instances), self.max_boxes),
-            dtype=torch.float32,device=gt_instances[0].device
+            dtype=torch.float32,device=gt_instances[0].gt_boxes.device
         )
 
         for i, instance in enumerate(gt_instances):
-            label = label[label[:, 4] != -1]
+            # label = label[label[:, 4] != -1]
             hm, reg, wh, reg_mask, ind = self.__decode_label(instance)
             gt_hm[i, :, :, :] = hm
             gt_reg[i, :, :] = reg

@@ -3,9 +3,9 @@
 from typing import Dict
 import torch
 from torch import nn
+import torch.nn.functional as F
 from detectron2.layers.shape_spec import ShapeSpec
-
-from detectron2.layers.wrappers import Conv2d, ConvTranspose2d, BatchNorm2d
+from detectron2.layers.wrappers import Conv2d,  BatchNorm2d
 from detectron2.config.config import configurable
 
 from .build import PROPOSAL_GENERATOR_REGISTRY
@@ -15,16 +15,26 @@ class CenternetHeads(nn.Module):
 
 
     @configurable
-    def __init__(self,nlayers, in_channels,nheads_in, hm_heads,rg_heads,wh_heads):
+    def __init__(self,*,nlayers, in_channels,nheads_in, hm_heads,rg_heads,wh_heads):
         super(CenternetHeads, self).__init__()
         self.transpose_layers = []
+        self.bnlayers = nn.Sequential(
+           *[BatchNorm2d(in_channels) for _ in range(nlayers-1)]
+        )
         for _ in range(nlayers-1):
             self.transpose_layers.append(
-                nn.Sequential(
-                    ConvTranspose2d(in_channels,in_channels,kernel_size=(4,4),stride=2,padding=1),
-                    BatchNorm2d(in_channels)
-                )
+                    nn.ConvTranspose2d(
+                        in_channels,
+                        in_channels,
+                        kernel_size=(2,2),
+                        stride=2,
+                        padding=(0,0),
+                        dilation=1
+                        # output_padding=1,
+                    )
             )
+
+        self.transpose_layers = nn.Sequential(*self.transpose_layers)
         self.heatmap_layer = nn.Sequential(
             Conv2d(in_channels,nheads_in,kernel_size=3,stride=1,padding="same"),
             nn.ReLU(),
@@ -44,17 +54,59 @@ class CenternetHeads(nn.Module):
 
 
     def forward(self,x):
-        new_ten = None
-        for i in range(len(x)):
-            old_ten = (x[i]+new_ten) if new_ten is not None else x[i]
-            if i < len(x)-1:
-                new_ten = self.transpose_layers[i](old_ten,output_size = x[i+1].size())
+        ps = ("p6","p5","p4","p3","p2")
+        for i,p in enumerate(ps):
+            if i < 4:
+                out = self.transpose_layers[i](x[p])
+                out = self.bnlayers[i](out)
+                x[ps[i+1]],out = self._adjust_dim(x[ps[i+1]], out)
+                x[ps[i+1]] += out
 
-        heatmap = self.heatmap_layer(old_ten)
-        reg = self.reg_layer(old_ten)
-        wh = self.wh_layer(old_ten)
+        heatmap = self.heatmap_layer(x["p2"])
+        reg = self.reg_layer(x["p2"])
+        wh = self.wh_layer(x["p2"])
+        return torch.cat([heatmap, reg, wh],1)
 
-        return torch.concat([heatmap, reg, wh],1)
+    @torch.no_grad()
+    def _adjust_dim(self,t1:torch.Tensor,t2:torch.Tensor):
+        r_t1,c_t1 = t1.shape[-2:]
+        r_t2,c_t2 = t2.shape[-2:]
+        max_row = max(r_t1,r_t2) if r_t1 != r_t2 else None
+        max_col = max(c_t1,c_t2) if c_t1 != c_t2 else None
+
+        if max_row is not None:
+            to_add = t2 if max_row == r_t1 else t1
+            while max_row - min(r_t1,r_t2)> 0:
+                to_add = torch.cat(
+                    (
+                        to_add,
+                     torch.zeros((*to_add.shape[:2],1,to_add.shape[-1]),device=to_add.device)
+                    ),
+                    -2
+                )
+                max_row -= 1
+            if r_t1 > r_t2:
+                t2 = to_add
+            else:
+                t1 = to_add
+
+        if max_col is not None:
+            to_add = t2 if max_col == c_t1 else t1
+            while max_col - min(c_t1,c_t2) > 0:
+                to_add = torch.cat(
+                    (
+                        to_add,
+                     torch.zeros((*to_add.shape[:3],1),device=to_add.device)
+                    ),
+                    -2
+                )
+                max_col -=1
+
+            if c_t1 > c_t2:
+                t2 = to_add
+            else:
+                t1 = to_add
+        return t1,t2
 
 
     @classmethod

@@ -13,6 +13,7 @@ The call should return a `nn.Module` object.
 """
 
 from . import rpn, rrpn  # noqa F401 isort:skip
+from . import centernet_heads
 
 
 def build_proposal_generator(cfg, input_shape):
