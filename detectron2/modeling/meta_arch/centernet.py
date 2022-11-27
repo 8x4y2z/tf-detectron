@@ -212,7 +212,7 @@ class Centernet(nn.Module):
             center_point = torch.tensor([ctr_x, ctr_y],
                                         dtype=torch.float32, device=instance.gt_boxes.device)
             center_point_int = center_point.to(torch.int32)
-            draw_umich_gaussian(hm[:, :, class_id], center_point_int, radius)
+            draw_umich_gaussian(hm[class_id], center_point_int, radius)
             reg[i] = center_point - center_point_int
             wh[i] = torch.tensor((1. * w, 1. * h)).to(wh)
             reg_mask[i] = 1
