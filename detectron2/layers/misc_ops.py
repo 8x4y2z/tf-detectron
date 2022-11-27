@@ -9,19 +9,19 @@ def gaussian_radius(det_size, min_overlap=0.7):
     a1 = 1
     b1 = (height + width)
     c1 = width * height * (1 - min_overlap) / (1 + min_overlap)
-    sq1 = torch.sqrt(b1 ** 2 - 4 * a1 * c1)
+    sq1 = np.sqrt(b1 ** 2 - 4 * a1 * c1)
     r1 = (b1 + sq1) / 2
 
     a2 = 4
     b2 = 2 * (height + width)
     c2 = (1 - min_overlap) * width * height
-    sq2 = torch.sqrt(b2 ** 2 - 4 * a2 * c2)
+    sq2 = np.sqrt(b2 ** 2 - 4 * a2 * c2)
     r2 = (b2 + sq2) / 2
 
     a3 = 4 * min_overlap
     b3 = -2 * min_overlap * (height + width)
     c3 = (min_overlap - 1) * width * height
-    sq3 = torch.sqrt(b3 ** 2 - 4 * a3 * c3)
+    sq3 = np.sqrt(b3 ** 2 - 4 * a3 * c3)
     r3 = (b3 + sq3) / 2
     return min(r1, r2, r3)
 
@@ -52,3 +52,19 @@ def draw_umich_gaussian(heatmap, center, radius, k=1):
         masked_heatmap = torch.maximum(masked_heatmap, masked_gaussian * k)
 
     return heatmap
+
+def gather_feat(feat, ind, mask=None):
+    dim  = feat.size(2)
+    ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
+    feat = feat.gather(1, ind)
+    if mask is not None:
+        mask = mask.unsqueeze(2).expand_as(feat)
+        feat = feat[mask]
+        feat = feat.view(-1, dim)
+    return feat
+
+def gather_feat_alt(feat,ind):
+    feat = torch.reshape(feat, (feat.shape[0], feat.shape[1], -1))
+    feat = feat.permute(0,2,1)
+    feat = feat.gather(1, ind.unsqueeze(-1).expand(-1,-1,feat.shape[-1]))
+    return feat

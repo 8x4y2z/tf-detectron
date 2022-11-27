@@ -2,7 +2,7 @@
 from typing import Tuple, Optional, List, Dict
 
 import torch
-from torch import nn
+from torch import nn, topk
 import torch.nn.functional as F
 
 from detectron2.config.config import configurable
@@ -10,8 +10,10 @@ from detectron2.modeling.backbone import Backbone, build_backbone
 from detectron2.modeling.proposal_generator import build_proposal_generator
 from detectron2.layers import move_device_like, gaussian_radius, draw_umich_gaussian
 from detectron2.utils.events import get_event_storage
-from detectron2.structures import Instances, ImageList
+from detectron2.structures import Instances, ImageList, Boxes
 from detectron2.layers import modified_focal_loss, reg1loss
+from detectron2.layers import gather_feat_alt
+from ..postprocessing import detector_postprocess
 from .build import META_ARCH_REGISTRY
 
 
@@ -30,6 +32,10 @@ class Centernet(nn.Module):
                  wh_weight: float,
                  nclasses: int,
                  max_boxes:int,
+                 downsampling:int,
+                 focal_loss_alpha:float,
+                 focal_loss_beta:float,
+                 thresh:float,
                  vis_period: int = 0,
                  ):
         super(Centernet, self).__init__()
@@ -51,6 +57,10 @@ class Centernet(nn.Module):
         self.reg_weight = reg_weight
         self.nclasses = nclasses
         self.max_boxes = max_boxes
+        self.downsampling = downsampling
+        self.focal_loss_alpha = focal_loss_alpha
+        self.focal_loss_beta = focal_loss_beta
+        self.thresh = thresh
 
 
 
@@ -69,6 +79,10 @@ class Centernet(nn.Module):
             "hm_weight": cfg.MODEL.PROPOSAL_GENERATOR.HM_WEIGHT,
             "reg_weight": cfg.MODEL.PROPOSAL_GENERATOR.REG_WEIGHT,
             "wh_weight": cfg.MODEL.PROPOSAL_GENERATOR.WH_WEIGHT,
+            "downsampling": cfg.MODEL.CENTERNET.DOWN_SAMPLING,
+            "focal_loss_alpha": cfg.MODEL.CENTERNET.FOCAL_LOSS_ALPHA,
+            "focal_loss_beta": cfg.MODEL.CENTERNET.FOCAL_LOSS_BETA,
+            "thresh": cfg.MODEL.CENTERNET.THRESHOLD
         }
 
 
@@ -107,6 +121,8 @@ class Centernet(nn.Module):
             return self.inference(batched_inputs)
 
         images = self.preprocess_image(batched_inputs)
+        dims = batched_inputs[0]["image"].shape[-2:]
+        dims = tuple(dim//self.downsampling for dim in dims)
         if "instances" in batched_inputs[0]:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         else:
@@ -114,7 +130,7 @@ class Centernet(nn.Module):
 
         features = self.backbone(images.tensor)
 
-        out_features = self.proposal_generator(features)
+        out_features = self.proposal_generator(features,dims)
 
         if self.vis_period > 0:
             storage = get_event_storage()
@@ -126,9 +142,9 @@ class Centernet(nn.Module):
         return losses
 
     def _combined_losses(self,out_features, gt_instances):
-        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode(self.nclasses,gt_instances, out_features)
+        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode(self.nclasses,gt_instances)
         heatmap, reg, wh = torch.split(out_features, [self.nclasses, 2, 2], 1)
-        heatmap = torch.clamp(F.sigmoid(heatmap), min=1e-4, max=1.0 - 1e-4)
+        heatmap = torch.clamp(torch.sigmoid(heatmap), min=1e-4, max=1.0 - 1e-4)
         hm_loss = modified_focal_loss(heatmap,gt_hm, self.focal_loss_alpha, self.focal_loss_beta)
         reg_loss = reg1loss(reg, gt_reg_mask, gt_indices, gt_reg)
         wh_loss = reg1loss(wh,gt_reg_mask,gt_indices,gt_wh)
@@ -136,17 +152,18 @@ class Centernet(nn.Module):
         loss = self.hm_weight * hm_loss + self.reg_weight * reg_loss + self.wh_weight * wh_loss
         return loss
 
-    def _decode(self,nclasses:int,gt_instances:List[Instances], out_features: torch.Tensor):
+    def _decode(self,nclasses:int,gt_instances:List[Instances]):
+        features_shape = tuple(x//self.downsampling for x in tuple(gt_instances[0].image_size))
         gt_hm = torch.zeros(
-            (len(gt_instances),nclasses,*out_features.shape[-2:]),
+            (len(gt_instances),nclasses,*features_shape),
             dtype=torch.float32,device=gt_instances[0].gt_boxes.device
         )
         gt_reg = torch.zeros(
-            (len(gt_instances),2,self.max_boxes),
+            (len(gt_instances),self.max_boxes,2),
             dtype=torch.float32,device=gt_instances[0].gt_boxes.device
         )
         gt_wh = torch.zeros(
-            (len(gt_instances), 2, self.max_boxes),
+            (len(gt_instances),  self.max_boxes,2),
             dtype=torch.float32,device=gt_instances[0].gt_boxes.device
                             )
         gt_reg_mask = torch.zeros(
@@ -155,12 +172,12 @@ class Centernet(nn.Module):
         )
         gt_indices = torch.zeros(
             (len(gt_instances), self.max_boxes),
-            dtype=torch.float32,device=gt_instances[0].gt_boxes.device
+            dtype=torch.int64,device=gt_instances[0].gt_boxes.device
         )
 
         for i, instance in enumerate(gt_instances):
             # label = label[label[:, 4] != -1]
-            hm, reg, wh, reg_mask, ind = self.__decode_label(instance)
+            hm, reg, wh, reg_mask, ind = self._decode_label(instance)
             gt_hm[i, :, :, :] = hm
             gt_reg[i, :, :] = reg
             gt_wh[i, :, :] = wh
@@ -171,32 +188,35 @@ class Centernet(nn.Module):
         return gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices
 
     def _decode_label(self, instance:Instances):
+
+        features_shape = tuple(x//self.downsampling for x in tuple(instance.image_size))
         hm = torch.zeros(
-            (self.nclasses, *(tuple(x//self.downsampling for x in instance.image_size))),
-            dtype=torch.float32, device=instance.device)
-        reg = torch.zeros((2,self.max_boxes), dtype=torch.float32,
-                          device=instance.boxes.device)
-        wh = torch.zeros((2,self.max_boxes),
-                         dtype=torch.float32,device=instance.device)
+            (self.nclasses, *(features_shape)),
+            dtype=torch.float32, device=instance.gt_boxes.device)
+        reg = torch.zeros((self.max_boxes,2), dtype=torch.float32,
+                          device=instance.gt_boxes.device)
+        wh = torch.zeros((self.max_boxes,2),
+                         dtype=torch.float32,device=instance.gt_boxes.device)
         reg_mask = torch.zeros((self.max_boxes),
-                               dtype=torch.float32, device=instance.device)
+                               dtype=torch.float32, device=instance.gt_boxes.device)
         ind = torch.zeros((self.max_boxes),
-                          dtype=torch.float32, device=instance.device)
-        instance.boxes.scale((1/self.downsampling, 1/self.downsampling))
-        for i,box in enumerate(instance.boxes):
+                          dtype=torch.float32, device=instance.gt_boxes.device)
+        instance.gt_boxes.scale(1/self.downsampling, 1/self.downsampling)
+        for i,box in enumerate(instance.gt_boxes):
             xmin,ymin,xmax,ymax = box
-            class_id = instance.class_id[i]
+            class_id = instance.gt_classes[i]
             h, w = int(ymax - ymin), int(xmax - xmin)
             radius = gaussian_radius((h, w))
             radius = max(0, int(radius))
             ctr_x, ctr_y = (xmin + xmax) / 2, (ymin + ymax) / 2
-            center_point = torch.tensor([ctr_x, ctr_y], dtype=torch.float32, device=instance.boces.device)
+            center_point = torch.tensor([ctr_x, ctr_y],
+                                        dtype=torch.float32, device=instance.gt_boxes.device)
             center_point_int = center_point.to(torch.int32)
             draw_umich_gaussian(hm[:, :, class_id], center_point_int, radius)
             reg[i] = center_point - center_point_int
-            wh[i] = 1. * w, 1. * h
+            wh[i] = torch.tensor((1. * w, 1. * h)).to(wh)
             reg_mask[i] = 1
-            ind[i] = center_point_int[1] * self.features_shape[1] + center_point_int[0]
+            ind[i] = center_point_int[1] * features_shape[1] + center_point_int[0]
         return hm, reg, wh, reg_mask, ind
 
 
@@ -229,21 +249,33 @@ class Centernet(nn.Module):
         images = self.preprocess_image(batched_inputs)
         features = self.backbone(images.tensor)
 
+        odims = batched_inputs[0]["image"].shape[-2:]
+        dims = tuple(dim//self.downsampling for dim in odims)
+
         if detected_instances is None:
             if self.proposal_generator is not None:
-                proposals, _ = self.proposal_generator(images, features, None)
+                out_features = self.proposal_generator(features,dims)
             else:
                 assert "proposals" in batched_inputs[0]
                 proposals = [x["proposals"].to(self.device) for x in batched_inputs]
 
-            results, _ = self.roi_heads(images, features, proposals, None)
+            results = self._interpret(out_features,odims)
         else:
-            detected_instances = [x.to(self.device) for x in detected_instances]
-            results = self.roi_heads.forward_with_given_boxes(features, detected_instances)
+            raise RuntimeError("Unknow error occured")
+
+        instances = []
+        for result,img_size in zip(results,images.image_sizes):
+            boxes, scores, classes = torch.split(result,[4,1,1],-1)
+            kwargs = {"pred_boxes":Boxes(boxes),
+                      "scores":scores.reshape(-1),
+                      "pred_classes":classes.reshape(-1)
+                      }
+            instance = Instances(img_size,**kwargs)
+            instances.append(instance)
 
         if do_postprocess:
             assert not torch.jit.is_scripting(), "Scripting is not supported for postprocess."
-            return Centernet._postprocess(results, batched_inputs, images.image_sizes)
+            return Centernet._postprocess(instances, batched_inputs, images.image_sizes)
         return results
 
 
@@ -251,8 +283,9 @@ class Centernet(nn.Module):
         """
         Normalize, pad and batch the input images.
         """
-        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
+        images = [self._move_to_current_device(x["image"]).to(torch.float32) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
+        images = [y/y.max() for y in images] # Squash b/w 0 and 1
         images = ImageList.from_tensors(
             images,
             self.backbone.size_divisibility,
@@ -275,3 +308,78 @@ class Centernet(nn.Module):
             r = detector_postprocess(results_per_image, height, width)
             processed_results.append({"instances": r})
         return processed_results
+
+    def _interpret(self,out_features,img_shape):
+        detections = centernet_decode(
+            out_features,
+            img_shape,
+            self.nclasses,
+            self.max_boxes,
+            self.downsampling,
+            self.thresh)
+        return detections
+
+
+
+
+def centernet_decode(
+        out_features,
+        img_shape,
+        nclasses,
+        top_k,
+        down_sampling,
+        thresh
+):
+    heatmap, reg, wh = torch.split(out_features, [nclasses, 2, 2], 1)
+    heatmap = torch.sigmoid(heatmap)
+    heatmap = centernet_nms(heatmap)
+    batch_size = out_features.shape[0]
+    scores, inds, clses, ys, xs = centernet_topk(heatmap,top_k)
+
+    reg = gather_feat_alt(reg,inds)
+    xs = torch.reshape(xs,(batch_size,top_k,1)) + reg[:,:,0:1]
+    ys = torch.reshape(ys,(batch_size, top_k, 1)) + reg[:, :, 1:2]
+    wh = gather_feat_alt(wh,inds)
+
+    classes = torch.reshape(clses, (batch_size, top_k, 1)).to(torch.float32)
+    scores = torch.reshape(scores, (batch_size, top_k, 1))
+    bboxes = torch.cat([xs - wh[..., 0:1] / 2,
+                               ys - wh[..., 1:2] / 2,
+                               xs + wh[..., 0:1] / 2,
+                               ys + wh[..., 1:2] / 2], 2)
+    detections = torch.cat([bboxes, scores, classes], 2)
+    return centernet_map_to_original(detections,img_shape,down_sampling,thresh)
+
+
+def centernet_topk(heatmap,top_k):
+    B, C, H, W = heatmap.shape
+    scores = torch.reshape(heatmap, (B, -1))
+    topk_scores, topk_inds = torch.topk(scores,top_k, sorted=True)
+    topk_clses = topk_inds % C
+    topk_xs = (topk_inds // C % W).to(torch.float32)
+    topk_ys = (topk_inds // C // W).to(torch.float32)
+    topk_inds = (topk_ys * (W) + topk_xs).to(torch.int64)
+    return topk_scores, topk_inds, topk_clses, topk_ys, topk_xs
+
+def centernet_nms(heatmap, pool_size=3):
+    hmax = torch.nn.MaxPool2d(pool_size, stride=1, padding=1)(heatmap)
+    keep = (heatmap == hmax).to(torch.float32)
+    return hmax * keep
+
+
+def centernet_map_to_original(detections,original_image_size,downsampling_ratio,score_threshold):
+    bboxes, scores, clses = torch.split(detections, [4, 1, 1], 2)
+    # bboxes, scores, clses = bboxes[0], scores[0], clses[0]
+    # resize_ratio = original_image_size / self.input_image_size
+    bboxes[..., 0::2] = bboxes[..., 0::2] * downsampling_ratio
+    bboxes[..., 1::2] = bboxes[..., 1::2] * downsampling_ratio
+    bboxes[..., 0::2] = torch.clamp(bboxes[..., 0::2], min=0, max=original_image_size[1])
+    bboxes[..., 1::2] = torch.clamp(bboxes[..., 1::2], min=0, max=original_image_size[0])
+    score_mask = scores >= score_threshold
+    bboxes, scores, clses = _numpy_mask(bboxes, torch.tile(score_mask, (1, 4))), _numpy_mask(scores, score_mask), _numpy_mask(clses, score_mask)
+    detections = torch.cat([bboxes, scores, clses], -1)
+    return detections
+
+
+def _numpy_mask(a, mask):
+    return a[mask].reshape(a.shape[0],-1, a.shape[-1])

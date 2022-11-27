@@ -6,4 +6,6 @@ MODEL:
     DEPTH: 50
 INPUT:
   RANDOM_FLIP: none
-OUTPUT_DIR: "./centernet_out"
+OUTPUT_DIR: "./centernet_out_new"
+TEST:
+  EVAL_PERIOD: 5000

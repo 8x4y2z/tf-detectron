@@ -144,7 +144,6 @@ def inference_on_dataset(
         if isinstance(model, nn.Module):
             stack.enter_context(inference_context(model))
         stack.enter_context(torch.no_grad())
-
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
             total_data_time += time.perf_counter() - start_data_time
@@ -184,6 +183,8 @@ def inference_on_dataset(
                     n=5,
                 )
             start_data_time = time.perf_counter()
+            # if idx>5:
+            #     break
 
     # Measure the time only for this worker (before the synchronization barrier)
     total_time = time.perf_counter() - start_time

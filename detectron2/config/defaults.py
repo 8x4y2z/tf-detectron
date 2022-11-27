@@ -521,6 +521,19 @@ _C.MODEL.RESNETS.DEFORM_NUM_GROUPS = 1
 
 
 # ---------------------------------------------------------------------------- #
+# CenterNet Head
+# ---------------------------------------------------------------------------- #
+_C.MODEL.CENTERNET = CN()
+_C.MODEL.CENTERNET.FOCAL_LOSS_ALPHA = 2
+_C.MODEL.CENTERNET.FOCAL_LOSS_BETA = 4
+# Downsampling for centernet
+_C.MODEL.CENTERNET.DOWN_SAMPLING = 8
+
+# Threshold
+_C.MODEL.CENTERNET.THRESHOLD = 0.3
+
+
+# ---------------------------------------------------------------------------- #
 # Solver
 # ---------------------------------------------------------------------------- #
 _C.SOLVER = CN()
