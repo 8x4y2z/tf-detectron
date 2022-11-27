@@ -24,6 +24,9 @@ DATASETS:
   TRAIN: ("lisa-train",)
   TEST: ("lisa-val",)
 SOLVER:
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_VALUE: 10.0
   IMS_PER_BATCH: 16
   BASE_LR: 0.02
   STEPS: (60000, 80000)
