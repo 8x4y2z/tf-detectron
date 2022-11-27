@@ -53,7 +53,7 @@ class CenternetHeads(nn.Module):
         )
 
 
-    def forward(self,x,dims):
+    def forward(self,x):
         # out = self.transpose_layers[0](x["p6"])
         # out = self.bnlayers[0](out)
         # out = F.interpolate(out,(25,34))
@@ -86,8 +86,6 @@ class CenternetHeads(nn.Module):
         #         out = self.bnlayers[i](out)
         #         out = F.interpolate(out,x[ps[i+1]].shape[-2:])
         #         x[ps[i+1]] += out
-
-        x["p2"] = F.interpolate(x["p2"],dims)
 
         heatmap = self.heatmap_layer(x["p2"])
         reg = self.reg_layer(x["p2"])

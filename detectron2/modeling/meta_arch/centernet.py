@@ -121,8 +121,6 @@ class Centernet(nn.Module):
             return self.inference(batched_inputs)
 
         images = self.preprocess_image(batched_inputs)
-        dims = batched_inputs[0]["image"].shape[-2:]
-        dims = tuple(dim//self.downsampling for dim in dims)
         if "instances" in batched_inputs[0]:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         else:
@@ -130,19 +128,19 @@ class Centernet(nn.Module):
 
         features = self.backbone(images.tensor)
 
-        out_features = self.proposal_generator(features,dims)
+        out_features = self.proposal_generator(features)
 
         if self.vis_period > 0:
             storage = get_event_storage()
             if storage.iter % self.vis_period == 0:
                 self.visualize_training(batched_inputs, out_features)
 
-        losses = self._combined_losses(out_features, gt_instances)
+        losses = self._combined_losses(out_features, gt_instances, images.tensor.shape[-2:])
 
         return losses
 
-    def _combined_losses(self,out_features, gt_instances):
-        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode(self.nclasses,gt_instances)
+    def _combined_losses(self,out_features, gt_instances,img_shp):
+        gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices = self._decode(self.nclasses,gt_instances,img_shp)
         heatmap, reg, wh = torch.split(out_features, [self.nclasses, 2, 2], 1)
         heatmap = torch.clamp(torch.sigmoid(heatmap), min=1e-4, max=1.0 - 1e-4)
         hm_loss = modified_focal_loss(heatmap,gt_hm, self.focal_loss_alpha, self.focal_loss_beta)
@@ -152,8 +150,8 @@ class Centernet(nn.Module):
         loss = self.hm_weight * hm_loss + self.reg_weight * reg_loss + self.wh_weight * wh_loss
         return loss
 
-    def _decode(self,nclasses:int,gt_instances:List[Instances]):
-        features_shape = tuple(x//self.downsampling for x in tuple(gt_instances[0].image_size))
+    def _decode(self,nclasses:int,gt_instances:List[Instances], img_shp):
+        features_shape = tuple(x//self.downsampling for x in img_shp)
         gt_hm = torch.zeros(
             (len(gt_instances),nclasses,*features_shape),
             dtype=torch.float32,device=gt_instances[0].gt_boxes.device
@@ -177,7 +175,7 @@ class Centernet(nn.Module):
 
         for i, instance in enumerate(gt_instances):
             # label = label[label[:, 4] != -1]
-            hm, reg, wh, reg_mask, ind = self._decode_label(instance)
+            hm, reg, wh, reg_mask, ind = self._decode_label(instance,img_shp)
             gt_hm[i, :, :, :] = hm
             gt_reg[i, :, :] = reg
             gt_wh[i, :, :] = wh
@@ -187,9 +185,9 @@ class Centernet(nn.Module):
 
         return gt_hm, gt_reg, gt_wh, gt_reg_mask, gt_indices
 
-    def _decode_label(self, instance:Instances):
+    def _decode_label(self, instance:Instances, img_shp):
 
-        features_shape = tuple(x//self.downsampling for x in tuple(instance.image_size))
+        features_shape = tuple(x//self.downsampling for x in img_shp)
         hm = torch.zeros(
             (self.nclasses, *(features_shape)),
             dtype=torch.float32, device=instance.gt_boxes.device)
@@ -249,12 +247,11 @@ class Centernet(nn.Module):
         images = self.preprocess_image(batched_inputs)
         features = self.backbone(images.tensor)
 
-        odims = batched_inputs[0]["image"].shape[-2:]
-        dims = tuple(dim//self.downsampling for dim in odims)
+        odims = images.tensor.shape[-2:]
 
         if detected_instances is None:
             if self.proposal_generator is not None:
-                out_features = self.proposal_generator(features,dims)
+                out_features = self.proposal_generator(features)
             else:
                 assert "proposals" in batched_inputs[0]
                 proposals = [x["proposals"].to(self.device) for x in batched_inputs]
@@ -285,7 +282,7 @@ class Centernet(nn.Module):
         """
         images = [self._move_to_current_device(x["image"]).to(torch.float32) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        images = [y/y.max() for y in images] # Squash b/w 0 and 1
+        # images = [y/y.max() for y in images] # Squash b/w 0 and 1
         images = ImageList.from_tensors(
             images,
             self.backbone.size_divisibility,
