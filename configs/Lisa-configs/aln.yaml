@@ -2,10 +2,14 @@ _BASE_: "../lisa-rcnn-fpn-apm.yaml"
 MODEL:
   WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
   MASK_ON: False
-  APM: True
+  APM: False
+  LOAD_PROPOSALS: True
   RESNETS:
     DEPTH: 50
 INPUT:
   RANDOM_FLIP: none
   MIN_SIZE_TRAIN: (480,)
-OUTPUT_DIR: "./apm_output"
+DATASETS:
+  PROPOSAL_FILES_TRAIN: ("/home/pupil/Documents/upgrad/msc/apm_output/inference/proposal_predictions.pth",)
+
+OUTPUT_DIR: "./aln_output"

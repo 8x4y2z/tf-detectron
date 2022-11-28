@@ -39,6 +39,7 @@ class GeneralizedRCNN(nn.Module):
         roi_heads: nn.Module,
         pixel_mean: Tuple[float],
         pixel_std: Tuple[float],
+        apm:bool=False,
         input_format: Optional[str] = None,
         vis_period: int = 0,
     ):
@@ -68,6 +69,8 @@ class GeneralizedRCNN(nn.Module):
             self.pixel_mean.shape == self.pixel_std.shape
         ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
 
+        self.apm = apm
+
     @classmethod
     def from_config(cls, cfg):
         backbone = build_backbone(cfg)
@@ -79,6 +82,7 @@ class GeneralizedRCNN(nn.Module):
             "vis_period": cfg.VIS_PERIOD,
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
+            "apm": cfg.MODEL.APM
         }
 
     @property
@@ -147,7 +151,7 @@ class GeneralizedRCNN(nn.Module):
                 "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
         """
         if not self.training:
-            return self.inference(batched_inputs)
+            return self.inference(batched_inputs,apm=self.apm)
 
         images = self.preprocess_image(batched_inputs)
         if "instances" in batched_inputs[0]:
@@ -180,6 +184,7 @@ class GeneralizedRCNN(nn.Module):
         batched_inputs: List[Dict[str, torch.Tensor]],
         detected_instances: Optional[List[Instances]] = None,
         do_postprocess: bool = True,
+            apm=False,
     ):
         """
         Run inference on the given inputs.
@@ -206,6 +211,11 @@ class GeneralizedRCNN(nn.Module):
         if detected_instances is None:
             if self.proposal_generator is not None:
                 proposals, _ = self.proposal_generator(images, features, None)
+                if apm:
+                    scale_factor = batched_inputs[0]["height"]/images.image_sizes[0][0]
+                    for instance in proposals:
+                        instance.proposal_boxes.scale(scale_factor,scale_factor)
+                    return proposals
             else:
                 assert "proposals" in batched_inputs[0]
                 proposals = [x["proposals"].to(self.device) for x in batched_inputs]

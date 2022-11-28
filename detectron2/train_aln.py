@@ -20,7 +20,7 @@ import logging
 import os
 from collections import OrderedDict
 import itertools
-import numpy as np
+
 import torch
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
@@ -137,8 +137,8 @@ class APMEvaluator(COCOEvaluator):
             boxes.append(pred["proposals"]["boxes"].numpy().tolist())
             objectness_logits.append(pred["proposals"]["objectness_logits"].numpy().tolist())
         out["ids"] = img_ids
-        out["boxes"] = np.array(boxes)
-        out["objectness_logits"] = np.array(objectness_logits)
+        out["boxes"] = boxes
+        out["objectness_logits"] = objectness_logits
 
         if len(predictions) == 0:
             self._logger.warning("[COCOEvaluator] Did not receive valid predictions.")
@@ -172,9 +172,7 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
-        if output_folder is None:
-            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
-        return APMEvaluator(dataset_name, output_dir=output_folder)
+        return build_evaluator(cfg, dataset_name, output_folder)
 
     @classmethod
     def test_with_TTA(cls, cfg, model):

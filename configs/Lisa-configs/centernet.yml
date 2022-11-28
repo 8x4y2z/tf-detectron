@@ -8,4 +8,4 @@ INPUT:
   RANDOM_FLIP: none
 OUTPUT_DIR: "./centernet_out_new"
 TEST:
-  EVAL_PERIOD: 5000
+  EVAL_PERIOD: 0
