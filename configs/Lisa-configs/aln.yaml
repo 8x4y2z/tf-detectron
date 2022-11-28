@@ -4,6 +4,8 @@ MODEL:
   MASK_ON: False
   APM: False
   LOAD_PROPOSALS: True
+  PROPOSAL_GENERATOR:
+    NAME: PrecomputedProposals
   RESNETS:
     DEPTH: 50
 INPUT:
