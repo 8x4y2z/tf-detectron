@@ -1,0 +1,9 @@
+_BASE_: "../lisa-rcnn-fpn-apm.yaml"
+MODEL:
+  WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  MASK_ON: False
+  RESNETS:
+    DEPTH: 50
+INPUT:
+  RANDOM_FLIP: none
+OUTPUT_DIR: "./apm_output"
