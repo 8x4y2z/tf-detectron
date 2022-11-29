@@ -20,6 +20,13 @@ import logging
 import os
 from collections import OrderedDict
 
+from detectron2.data import DatasetMapper
+from detectron2.config import configurable
+from detectron2.data import (transforms as T,
+                             detection_utils as utils,
+                             build_detection_test_loader,
+                             build_detection_train_loader,
+                             )
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
@@ -103,6 +110,44 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     return DatasetEvaluators(evaluator_list)
 
 
+class CenterNetMapper(DatasetMapper):
+    @configurable
+    def __init__(self,*args,**kwargs):
+        super(CenterNetMapper, self).__init__(*args,**kwargs)
+
+    @classmethod
+    def from_config(cls, cfg, is_train: bool = True):
+        if is_train:
+            augs = [T.Resize((cfg.INPUT.MIN_SIZE_TRAIN[0],cfg.INPUT.MAX_SIZE_TRAIN))]
+        else:
+            augs = [T.Resize((cfg.INPUT.MIN_SIZE_TEST,cfg.INPUT.MAX_SIZE_TEST))]
+        if cfg.INPUT.CROP.ENABLED and is_train:
+            augs.insert(0, T.RandomCrop(cfg.INPUT.CROP.TYPE, cfg.INPUT.CROP.SIZE))
+            recompute_boxes = cfg.MODEL.MASK_ON
+        else:
+            recompute_boxes = False
+        ret = {
+            "is_train": is_train,
+            "augmentations": augs,
+            "image_format": cfg.INPUT.FORMAT,
+            "use_instance_mask": cfg.MODEL.MASK_ON,
+            "instance_mask_format": cfg.INPUT.MASK_FORMAT,
+            "use_keypoint": cfg.MODEL.KEYPOINT_ON,
+            "recompute_boxes": recompute_boxes,
+        }
+
+        if cfg.MODEL.KEYPOINT_ON:
+            ret["keypoint_hflip_indices"] = utils.create_keypoint_hflip_indices(cfg.DATASETS.TRAIN)
+
+        if cfg.MODEL.LOAD_PROPOSALS:
+            ret["precomputed_proposal_topk"] = (
+                cfg.DATASETS.PRECOMPUTED_PROPOSAL_TOPK_TRAIN
+                if is_train
+                else cfg.DATASETS.PRECOMPUTED_PROPOSAL_TOPK_TEST
+            )
+        return ret
+
+
 class Trainer(DefaultTrainer):
     """
     We use the "DefaultTrainer" which contains pre-defined default logic for
@@ -131,6 +176,30 @@ class Trainer(DefaultTrainer):
         res = cls.test(cfg, model, evaluators)
         res = OrderedDict({k + "_TTA": v for k, v in res.items()})
         return res
+
+    @classmethod
+    def build_train_loader(cls, cfg):
+        """
+        Returns:
+            iterable
+
+        It now calls :func:`detectron2.data.build_detection_train_loader`.
+        Overwrite it if you'd like a different data loader.
+        """
+        centernet_mapper = CenterNetMapper(cfg)
+        return build_detection_train_loader(cfg,mapper=centernet_mapper)
+
+    @classmethod
+    def build_test_loader(cls, cfg, dataset_name):
+        """
+        Returns:
+            iterable
+
+        It now calls :func:`detectron2.data.build_detection_test_loader`.
+        Overwrite it if you'd like a different data loader.
+        """
+        centernet_test_mapper = CenterNetMapper(cfg,False)
+        return build_detection_test_loader(cfg, dataset_name, mapper=centernet_test_mapper)
 
 
 def setup(args):
