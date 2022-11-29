@@ -34,6 +34,10 @@ class CenternetHeads(nn.Module):
                     )
             )
 
+        # Add custom transpose layer just for p6 due to upsizing issues
+        self.transpose_layers.insert(0,nn.ConvTranspose2d(
+            in_channels, in_channels, kernel_size=(1,1), stride=(2,2), padding=(0,0)
+        ))
         self.transpose_layers = nn.Sequential(*self.transpose_layers)
         self.heatmap_layer = nn.Sequential(
             Conv2d(in_channels,nheads_in,kernel_size=3,stride=1,padding="same"),
@@ -54,23 +58,23 @@ class CenternetHeads(nn.Module):
 
 
     def forward(self,x):
-        # out = self.transpose_layers[0](x["p6"])
-        # out = self.bnlayers[0](out)
-        # out = F.interpolate(out,(25,34))
-        # x["p5"] += out
-
-        out = self.transpose_layers[0](x["p5"],output_size = x["p4"].size())
+        out = self.transpose_layers[0](x["p6"], output_size = x["p5"].size())
         out = self.bnlayers[0](out)
+        # out = F.interpolate(out,(25,34))
+        x["p5"] += out
+
+        out = self.transpose_layers[1](x["p5"],output_size = x["p4"].size())
+        out = self.bnlayers[1](out)
         # out = F.interpolate(out,(50,68))
         x["p4"] += out
 
-        out = self.transpose_layers[1](x["p4"],output_size = x["p3"].size())
-        out = self.bnlayers[1](out)
+        out = self.transpose_layers[2](x["p4"],output_size = x["p3"].size())
+        out = self.bnlayers[2](out)
         # out = F.interpolate(out,(100,136))
         x["p3"] += out
 
-        out = self.transpose_layers[2](x["p3"],output_size = x["p2"].size())
-        out = self.bnlayers[2](out)
+        out = self.transpose_layers[3](x["p3"],output_size = x["p2"].size())
+        out = self.bnlayers[3](out)
         # out = F.interpolate(out,(200,272))
         x["p2"] += out
 
