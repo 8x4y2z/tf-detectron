@@ -31,6 +31,7 @@ _C.MODEL.MASK_ON = False
 _C.MODEL.KEYPOINT_ON = False
 _C.MODEL.DEVICE = "cuda"
 _C.MODEL.META_ARCHITECTURE = "GeneralizedRCNN"
+_C.MODEL.APM = False
 
 # Path (a file path, or URL like detectron2://.., https://..) to a checkpoint file
 # to be loaded to the model. You can find available models in the model zoo.

@@ -131,7 +131,7 @@ def load_proposals_into_dataset(dataset_dicts, proposal_file):
     logger.info("Loading proposals from: {}".format(proposal_file))
 
     with PathManager.open(proposal_file, "rb") as f:
-        proposals = pickle.load(f, encoding="latin1")
+        proposals = torch.load(f, encoding="latin1")
 
     # Rename the key names in D1 proposal files
     rename_keys = {"indexes": "ids", "scores": "objectness_logits"}
