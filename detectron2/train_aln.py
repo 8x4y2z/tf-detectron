@@ -47,7 +47,7 @@ if "lisa-train-val" not in MetadataCatalog.list():
     register_coco_instances(
         "lisa-train-val",
         {},
-        "datasets/lisa/train_val.json",
+        "datasets/lisa/train_val_true.json",
         "datasets/lisa/train_val"
     )
 

@@ -8,10 +8,15 @@ MODEL:
     NAME: PrecomputedProposals
   RESNETS:
     DEPTH: 50
+  ROI_HEADS:
+    NUM_CLASSES: 7
 INPUT:
   RANDOM_FLIP: none
+  MIN_SIZE_TEST: 480
   MIN_SIZE_TRAIN: (480,)
 DATASETS:
-  PROPOSAL_FILES_TRAIN: ("/home/pupil/Documents/upgrad/msc/apm_output/inference/proposal_predictions.pth",)
-
-OUTPUT_DIR: "./aln_output"
+  PROPOSAL_FILES_TRAIN: ("apm_output/inference/proposal_predictions.pth",)
+  PROPOSAL_FILES_TEST: ("apm_output/inference/proposal_predictions.pth",)
+OUTPUT_DIR: "./aln_output_local"
+TEST:
+  EVAL_PERIOD: 0
