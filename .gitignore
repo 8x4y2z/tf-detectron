@@ -14,3 +14,5 @@ library.bib
 *.pyc
 
 .dir-locals.el
+*.jpg
+*.pth
