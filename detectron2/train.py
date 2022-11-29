@@ -39,28 +39,28 @@ from detectron2.evaluation import (
 from detectron2.modeling import GeneralizedRCNNWithTTA
 from detectron2.data.datasets import register_coco_instances
 
-if "lisa-train" not in MetadataCatalog.list():
+if "lisa-train-val" not in MetadataCatalog.list():
     register_coco_instances(
-        "lisa-train",
+        "lisa-train-val",
         {},
-        "datasets/lisa/train.json",
-        "datasets/lisa/train"
+        "datasets/lisa/train_val_true.json",
+        "datasets/lisa/train_val"
     )
 
-    register_coco_instances(
-        "lisa-val",
-        {},
-        "datasets/lisa/val.json",
-        "datasets/lisa/val"
-    )
+    # register_coco_instances(
+    #     "lisa-val",
+    #     {},
+    #     "datasets/lisa/val.json",
+    #     "datasets/lisa/val"
+    # )
 
 
-    register_coco_instances(
-        "lisa-test",
-        {},
-        "datasets/lisa/test.json",
-        "datasets/lisa/test"
-    )
+    # register_coco_instances(
+    #     "lisa-test",
+    #     {},
+    #     "datasets/lisa/test.json",
+    #     "datasets/lisa/test"
+    # )
 
 
 def build_evaluator(cfg, dataset_name, output_folder=None):

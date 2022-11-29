@@ -21,14 +21,14 @@ MODEL:
     DOWN_SAMPLING: 4
     THRESHOLD: 0.3
 DATASETS:
-  TRAIN: ("lisa-train",)
-  TEST: ("lisa-val",)
+  TRAIN: ("lisa-train-val",)
+  TEST: ()
 SOLVER:
   CLIP_GRADIENTS:
     ENABLED: True
     CLIP_VALUE: 1.0
   IMS_PER_BATCH: 2
-  BASE_LR: 0.00025
+  BASE_LR: 0.0025
   STEPS: (60000, 80000)
   MAX_ITER: 50000
   # MAX_ITER: 20

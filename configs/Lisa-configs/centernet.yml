@@ -4,8 +4,12 @@ MODEL:
   MASK_ON: False
   RESNETS:
     DEPTH: 50
+SOLVER:
+  MAX_ITER: 150000
 INPUT:
   RANDOM_FLIP: none
-OUTPUT_DIR: "./centernet_out_new"
+  MIN_SIZE_TRAIN: (800,)
+  RANDOM_FLIP: none
+OUTPUT_DIR: "./centernet_out_new_new"
 TEST:
   EVAL_PERIOD: 0
