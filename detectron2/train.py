@@ -126,6 +126,7 @@ class CenterNetMapper(DatasetMapper):
             recompute_boxes = cfg.MODEL.MASK_ON
         else:
             recompute_boxes = False
+        augs.insert(0,T.PILColorTransform(lambda x: x.convert('YCbCr')))
         ret = {
             "is_train": is_train,
             "augmentations": augs,
