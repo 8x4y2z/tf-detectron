@@ -31,7 +31,7 @@ from detectron2.data import get_detection_dataset_dicts
 register_coco_instances(
     "lisa-train-val",
     {},
-    "datasets/lisa/train_val.json",
+    "datasets/lisa/train_val_true.json",
     "datasets/lisa/train_val"
 )
 
@@ -41,4 +41,4 @@ for i,datad in enumerate(dataset[:5]):
     img = cv2.imread(f"/home/pupil/Documents/upgrad/msc/{datad['file_name']}")
     visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
     out = visualizer.draw_dataset_dict(datad)
-    cv2.imwrite(f"sample{i}.jpg",out.get_image()[:, :, ::-1])
+    cv2.imwrite(f"sample_newst{i}.jpg",out.get_image()[:, :, ::-1])
