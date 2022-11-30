@@ -5,6 +5,13 @@ from detectron2.data import MetadataCatalog
 import cv2
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import get_detection_dataset_dicts
+import os
+import random
+
+N = 1000
+SEED = 100
+random.seed(SEED)
+os.makedirs("out-new", exist_ok=True)
 
 # register_coco_instances(
 #     "lisa-train",
@@ -28,17 +35,18 @@ from detectron2.data import get_detection_dataset_dicts
 #     "datasets/lisa/test"
 # )
 
+
 register_coco_instances(
-    "lisa-train-val",
+    "lisa-train-new",
     {},
-    "datasets/lisa/train_val.json",
-    "datasets/lisa/train_val"
+    "datasets/lisa-new/val.json",
+    "datasets/lisa-new/val"
 )
 
-metadata = MetadataCatalog.get("lisa-train-val")
-dataset = get_detection_dataset_dicts("lisa-train-val")
-for i,datad in enumerate(dataset[:5]):
+metadata = MetadataCatalog.get("lisa-train-new")
+dataset = get_detection_dataset_dicts("lisa-train-new")
+for i,datad in enumerate(random.sample(dataset,N)):
     img = cv2.imread(f"/home/pupil/Documents/upgrad/msc/{datad['file_name']}")
     visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
     out = visualizer.draw_dataset_dict(datad)
-    cv2.imwrite(f"sample{i}.jpg",out.get_image()[:, :, ::-1])
+    cv2.imwrite(f"out-new/{datad['file_name'].rsplit('/',1)[-1]}",out.get_image()[:, :, ::-1])

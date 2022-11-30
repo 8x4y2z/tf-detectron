@@ -15,18 +15,19 @@ import numpy as np
 
 SEED = 100
 random.seed(SEED)
+BASE_PATH = "/home/pupil/Documents/upgrad/msc/lisa/"
+ANNO_PATH = BASE_PATH + "Annotations/Annotations/"
+IMG_PATH = BASE_PATH
 
-ANNO_PATH = "/home/pupil/projects/tf-detectron/lisa/Annotations/Annotations/"
-IMG_PATH = "/home/pupil/projects/tf-detectron/lisa/"
 TRAIN_VAL_SEQ = ["dayTrain","nightTrain"]
 TEST_SEQ = ["daySequence1","daySequence2","nightSequence1","nightSequence2"]
 
-TRAIN_SPLIT = 0.75
+TRAIN_SPLIT = 0.80
 
 
 
 
-OUTPUT_PATH = "/home/pupil/projects/tf-detectron/datasets/lisa"
+OUTPUT_PATH = BASE_PATH+"../datasets/lisa-new"
 
 Entry = namedtuple("Entry",[
     'filename',
@@ -41,6 +42,16 @@ Entry = namedtuple("Entry",[
     'origin_track_frame_number'
     ]
 )
+
+ENTITY_MAPPING = {
+    "stop":"stop",
+    "go":"go",
+    "goforward":"go",
+    "goleft":"go",
+    "warning":"warning",
+    "warningleft":"warning",
+    "stopleft":"stop"
+}
 
 CATS_IDX_MAPPING:Dict[str,Optional[int]] = {}
 CATS_META = []
@@ -74,12 +85,20 @@ def add_to_global(
         entity_idx_mapping:Dict[str,Optional[int]],
         id_,
         **kwargs):
+    # if entity is category, remap it to new cats
+    if entity.lower() in ENTITY_MAPPING:
+        entity = ENTITY_MAPPING[entity.lower()]
+
     if entity in entity_idx_mapping:
+        # entity already exists. just increase counter and return
+        entity_md[entity_idx_mapping[entity]]["count"] += 1
         return
+
     entity_idx_mapping[entity] = None
     entity_dict = {
         "file_name" if entity.endswith("jpg") else "name":entity,
-        "id":id_
+        "id":id_,
+        "count":0
     }
     entity_idx_mapping[entity] = len(entity_md)
     if kwargs:
@@ -98,9 +117,11 @@ def create_annotation(
         id_):
 
     anno_dict = {}
-    anno_dict["category_id"] = cats[cats_idx_mapping[entry.annotation_tag]]["id"]
+    entity = ENTITY_MAPPING[entry.annotation_tag.lower()]
+    anno_dict["category_id"] = cats[cats_idx_mapping[entity]]["id"]
     anno_dict["image_id"] = imgs[imgs_idx_mapping[entry.filename.split("/")[1]]]["id"]
     anno_dict["id"] = id_
+    anno_dict["iscrowd"] = 0
 
     x = int(entry.upper_left_corner_x)
     y = int(entry.upper_left_corner_y)
