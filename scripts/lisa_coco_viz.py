@@ -8,10 +8,9 @@ from detectron2.data import get_detection_dataset_dicts
 import os
 import random
 
+random.seed(100)
 N = 1000
-SEED = 100
-random.seed(SEED)
-os.makedirs("out-new", exist_ok=True)
+OUT = "ycrcb"
 
 # register_coco_instances(
 #     "lisa-train",
@@ -42,11 +41,17 @@ register_coco_instances(
     "datasets/lisa-new/val.json",
     "datasets/lisa-new/val"
 )
+if not os.path.exists(OUT):
+    os.makedirs(OUT,exist_ok=True)
 
-metadata = MetadataCatalog.get("lisa-train-new")
-dataset = get_detection_dataset_dicts("lisa-train-new")
-for i,datad in enumerate(random.sample(dataset,N)):
+
+metadata = MetadataCatalog.get("lisa-train-val")
+dataset = get_detection_dataset_dicts("lisa-train-val")
+selected = random.sample(dataset,N)
+
+for i,datad in enumerate(selected):
     img = cv2.imread(f"/home/pupil/Documents/upgrad/msc/{datad['file_name']}")
+    img = cv2.cvtColor(img,36)
     visualizer = Visualizer(img[:, :, ::-1], metadata=metadata, scale=0.5)
     out = visualizer.draw_dataset_dict(datad)
-    cv2.imwrite(f"out-new/{datad['file_name'].rsplit('/',1)[-1]}",out.get_image()[:, :, ::-1])
+    cv2.imwrite(f"{OUT}/sample_newst{i}.jpg",out.get_image()[:, :, ::-1])

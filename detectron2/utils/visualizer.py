@@ -731,6 +731,9 @@ class Visualizer:
                     * 0.5
                     * self._default_font_size
                 )
+                aaa,bbb = text_pos
+                aaa = aaa - (x1-x0)
+                text_pos = aaa,bbb
                 self.draw_text(
                     labels[i],
                     text_pos,
