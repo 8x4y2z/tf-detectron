@@ -276,7 +276,13 @@ class SimpleTrainer(TrainerBase):
             losses = loss_dict
             loss_dict = {"total_loss": loss_dict}
         else:
-            losses = sum(loss_dict.values())
+            if "hm_loss" in loss_dict:
+                losses = (loss_dict["hm_loss"]*loss_dict.pop("hm_weight") +
+                          loss_dict["reg_loss"]*loss_dict.pop("reg_weight")+
+                          loss_dict["wh_loss"]*loss_dict.pop("wh_weight")
+                          )
+            else:
+                losses = sum(loss_dict.values())
 
         """
         If you need to accumulate gradients or do something similar, you can

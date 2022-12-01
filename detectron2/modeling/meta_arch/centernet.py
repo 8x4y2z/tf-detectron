@@ -147,8 +147,14 @@ class Centernet(nn.Module):
         reg_loss = reg1loss(reg, gt_reg_mask, gt_indices, gt_reg)
         wh_loss = reg1loss(wh,gt_reg_mask,gt_indices,gt_wh)
 
-        loss = self.hm_weight * hm_loss + self.reg_weight * reg_loss + self.wh_weight * wh_loss
-        return loss
+        return {
+            "hm_loss":hm_loss,
+            "reg_loss":reg_loss,
+            "wh_loss":wh_loss,
+            "hm_weight": self.hm_weight,
+            "reg_weight": self.reg_weight,
+            "wh_weight": self.wh_weight
+        }
 
     def _decode(self,nclasses:int,gt_instances:List[Instances], img_shp):
         features_shape = tuple(x//self.downsampling for x in img_shp)
@@ -281,8 +287,8 @@ class Centernet(nn.Module):
         Normalize, pad and batch the input images.
         """
         images = [self._move_to_current_device(x["image"]).to(torch.float32) for x in batched_inputs]
+        images = [y/255.0 for y in images] # Squash b/w 0 and 1
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        # images = [y/y.max() for y in images] # Squash b/w 0 and 1
         images = ImageList.from_tensors(
             images,
             self.backbone.size_divisibility,
