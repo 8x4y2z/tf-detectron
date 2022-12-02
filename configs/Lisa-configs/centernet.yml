@@ -17,4 +17,4 @@ INPUT:
   RANDOM_FLIP: none
 OUTPUT_DIR: "./centernet_local_train"
 TEST:
-  EVAL_PERIOD: 0
+  EVAL_PERIOD: 10000

@@ -4,9 +4,12 @@ import json
 
 from detectron2.structures import boxes
 
-PFP = "/home/pupil/Documents/upgrad/msc/centernet_out_new/inference/instances_predictions.pth"
-JFP = "/home/pupil/Documents/upgrad/msc/datasets/lisa/val.json"
-hp = "/home/pupil/Documents/upgrad/msc/datasets/lisa/val/"
+# PFP = "/home/pupil/Documents/upgrad/msc/centernet_out_new/inference/instances_predictions.pth"
+PFP = "/home/pupil/Documents/upgrad/msc/centernet_yuv_prepeo_1gc_6wh_8bs/inference/instances_predictions.pth"
+# JFP = "/home/pupil/Documents/upgrad/msc/datasets/lisa/val.json"
+JFP = "/home/pupil/Documents/upgrad/msc/datasets/lisa/train_val_true_val.json"
+# hp = "/home/pupil/Documents/upgrad/msc/datasets/lisa/val/"
+hp = "/home/pupil/Documents/upgrad/msc/datasets/lisa/train_val_val/"
 N = 5
 
 
@@ -15,7 +18,7 @@ def draw_prop(img_fp,props,out_fp):
     for box in props:
         _ = cv2.rectangle(ar, tuple(int(y) for y in box[:2]), tuple(int(y) for y in box[-2:]),
                       (255,0,0),2)
-        cv2.imwrite(f"{out_fp}.jpg",ar)
+        cv2.imwrite(f"{out_fp}_inf.jpg",ar)
 
 with open(JFP,"r") as stream:
     annos = json.load(stream)
