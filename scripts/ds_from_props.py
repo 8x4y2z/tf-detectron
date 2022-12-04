@@ -58,7 +58,7 @@ def proposal_to_image(proposals,fn,img_annos,fp,anno_list,img_list,nfp):
         new_img["height"] = y1-y0
         new_img["width"] = x1-x0
         img_list.append(new_img)
-        cv2.imwrite(nfp+f"{GIMG_ID}.jpg",cropped)
+        # cv2.imwrite(nfp+f"{GIMG_ID}.jpg",cropped)
         GIMG_ID += 1
 
 
@@ -114,7 +114,7 @@ def main():
         if annod_["image_id"] in imgann_mapping:
             imgann_mapping[annod_["image_id"]].append(annod_)
         else:
-            imgann_mapping[annod_["image_id"]] = []
+            imgann_mapping[annod_["image_id"]] = [annod_]
 
     for imgd_ in val_labels["images"]:
         imgfn_mapping[imgd_["id"]] = imgd_["file_name"],1
@@ -123,10 +123,10 @@ def main():
         if annod_["image_id"] in imgann_mapping:
             imgann_mapping[annod_["image_id"]].append(annod_)
         else:
-            imgann_mapping[annod_["image_id"]] = []
+            imgann_mapping[annod_["image_id"]] = [annod_]
 
-    os.makedirs(NEW_TRAIN_IMG_PATH,exist_ok=True)
-    os.makedirs(NEW_VAL_IMG_PATH,exist_ok=True)
+    # os.makedirs(NEW_TRAIN_IMG_PATH,exist_ok=True)
+    # os.makedirs(NEW_VAL_IMG_PATH,exist_ok=True)
 
     for i, id_ in enumerate(props["ids"]):
         # if i> 5:
@@ -144,6 +144,8 @@ def main():
             nfp = NEW_VAL_IMG_PATH
 
         proposal_to_image(prop_boccs,fn,annos,IMGS_PATH,anno_list,img_list,nfp)
+        if i%1000 == 0:
+            print(f"{i} out of {len(props['ids'])} completed")
 
     final_new_train_out = {
         "images":NEW_TRAIN_IMGS,

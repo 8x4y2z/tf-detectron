@@ -21,8 +21,8 @@ MODEL:
     DOWN_SAMPLING: 8
     THRESHOLD: 0.3
 DATASETS:
-  TRAIN: ("lisa-train-val",)
-  TEST: ("lisa-train-val-val",)
+  TRAIN: ("lisa-train-props",)
+  TEST: ("lisa-val_props",)
 SOLVER:
   IMS_PER_BATCH: 8
   BASE_LR: 0.000125

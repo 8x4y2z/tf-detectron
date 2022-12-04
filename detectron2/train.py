@@ -46,20 +46,20 @@ from detectron2.evaluation import (
 from detectron2.modeling import GeneralizedRCNNWithTTA
 from detectron2.data.datasets import register_coco_instances
 
-if "lisa-train-val-val" not in MetadataCatalog.list():
+if "lisa-train-props" not in MetadataCatalog.list():
     register_coco_instances(
-        "lisa-train-val-val",
+        "lisa-train-props",
         {},
-        "datasets/lisa/train_val_true_val.json",
-        "datasets/lisa/train_val_val"
+        "datasets/lisa/train_props.json",
+        "datasets/lisa/train_props"
     )
 
-if "lisa-train-val" not in MetadataCatalog.list():
+if "lisa-val-props" not in MetadataCatalog.list():
     register_coco_instances(
-        "lisa-train-val",
+        "lisa-val-props",
         {},
-        "datasets/lisa/train_val_true.json",
-        "datasets/lisa/train_val"
+        "datasets/lisa/val_props.json",
+        "datasets/lisa/val_props"
     )
 
     # register_coco_instances(

@@ -9,8 +9,9 @@ import os
 import random
 
 random.seed(100)
-N = 1000
-OUT = "ycrcb"
+N = 10
+OUT = "propsviz2"
+# OUT = "ycrcb"
 
 # register_coco_instances(
 #     "lisa-train",
@@ -34,18 +35,20 @@ OUT = "ycrcb"
 #     "datasets/lisa/test"
 # )
 
-register_coco_instances(
-    "lisa-train-val",
-    {},
-    "datasets/lisa-new/val.json",
-    "datasets/lisa-new/val"
-)
+if "lisa-props" not in MetadataCatalog.list():
+
+    register_coco_instances(
+        "lisa-props",
+        {},
+        "datasets/lisa/train_props.json",
+        "datasets/lisa/train_props"
+    )
 if not os.path.exists(OUT):
     os.makedirs(OUT,exist_ok=True)
 
 
-metadata = MetadataCatalog.get("lisa-train-val")
-dataset = get_detection_dataset_dicts("lisa-train-val")
+metadata = MetadataCatalog.get("lisa-props")
+dataset = get_detection_dataset_dicts("lisa-props")
 selected = random.sample(dataset,N)
 
 for i,datad in enumerate(selected):
