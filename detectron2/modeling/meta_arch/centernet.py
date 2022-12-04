@@ -12,7 +12,8 @@ from detectron2.layers import move_device_like, gaussian_radius, draw_umich_gaus
 from detectron2.utils.events import get_event_storage
 from detectron2.structures import Instances, ImageList, Boxes
 from detectron2.layers import modified_focal_loss, reg1loss
-from detectron2.layers import gather_feat_alt
+from detectron2.layers import gather_feat_alt, gather_feat
+from detectron2.layers.losses import _transpose_and_gather_feat
 from ..postprocessing import detector_postprocess
 from .build import META_ARCH_REGISTRY
 
@@ -119,7 +120,6 @@ class Centernet(nn.Module):
         """
         if not self.training:
             return self.inference(batched_inputs)
-
         images = self.preprocess_image(batched_inputs)
         if "instances" in batched_inputs[0]:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
@@ -147,8 +147,14 @@ class Centernet(nn.Module):
         reg_loss = reg1loss(reg, gt_reg_mask, gt_indices, gt_reg)
         wh_loss = reg1loss(wh,gt_reg_mask,gt_indices,gt_wh)
 
-        loss = self.hm_weight * hm_loss + self.reg_weight * reg_loss + self.wh_weight * wh_loss
-        return loss
+        return {
+            "hm_loss":hm_loss,
+            "reg_loss":reg_loss,
+            "wh_loss":wh_loss,
+            "hm_weight": self.hm_weight,
+            "reg_weight": self.reg_weight,
+            "wh_weight": self.wh_weight
+        }
 
     def _decode(self,nclasses:int,gt_instances:List[Instances], img_shp):
         features_shape = tuple(x//self.downsampling for x in img_shp)
@@ -275,14 +281,35 @@ class Centernet(nn.Module):
             return Centernet._postprocess(instances, batched_inputs, images.image_sizes)
         return results
 
+    @staticmethod
+    def quick_viz(binput,output,annos,dp="testinfer.jpg"):
+        import numpy as np,cv2
+        inp_img = np.ascontiguousarray(np.transpose(binput["image"].cpu().numpy(),[1,2,0]))
+        for bo in output:
+            _ = cv2.rectangle(inp_img,
+                              tuple(int(a) for a in bo[:2]),
+                              tuple(int(a) for a in bo[2:]),
+                              (255,0,1),2)
+
+        select = [anno for anno in annos if anno["image_id"] == binput["image_id"]]
+        for anno in select:
+            x1,y1,w,h = anno["bbox"]
+            wf = inp_img.shape[1]/binput["width"]
+            hf = inp_img.shape[0]/binput["height"]
+            a1,b1,a2,b2 = int(x1*wf), int(y1*hf),int((x1+w)*wf),int((y1+h)*hf)
+            _ = cv2.rectangle(inp_img,(a1,b1),(a2,b2),(0,255,0),1)
+
+        cv2.imwrite(dp,inp_img)
+
+
 
     def preprocess_image(self, batched_inputs: List[Dict[str, torch.Tensor]]):
         """
         Normalize, pad and batch the input images.
         """
         images = [self._move_to_current_device(x["image"]).to(torch.float32) for x in batched_inputs]
+        images = [y/255.0 for y in images] # Squash b/w 0 and 1
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        # images = [y/y.max() for y in images] # Squash b/w 0 and 1
         images = ImageList.from_tensors(
             images,
             self.backbone.size_divisibility,
@@ -333,30 +360,63 @@ def centernet_decode(
     batch_size = out_features.shape[0]
     scores, inds, clses, ys, xs = centernet_topk(heatmap,top_k)
 
-    reg = gather_feat_alt(reg,inds)
-    xs = torch.reshape(xs,(batch_size,top_k,1)) + reg[:,:,0:1]
-    ys = torch.reshape(ys,(batch_size, top_k, 1)) + reg[:, :, 1:2]
-    wh = gather_feat_alt(wh,inds)
+    reg = _transpose_and_gather_feat(reg, inds)
+    reg = reg.view(batch_size, top_k, 2)
+    xs = xs.view(batch_size, top_k, 1) + reg[:, :, 0:1]
+    ys = ys.view(batch_size, top_k, 1) + reg[:, :, 1:2]
 
-    classes = torch.reshape(clses, (batch_size, top_k, 1)).to(torch.float32)
-    scores = torch.reshape(scores, (batch_size, top_k, 1))
+    wh = _transpose_and_gather_feat(wh, inds)
+    wh = wh.view(batch_size, top_k, 2)
+
+    clses  = clses.view(batch_size, top_k, 1).float()
+    scores = scores.view(batch_size, top_k, 1)
     bboxes = torch.cat([xs - wh[..., 0:1] / 2,
-                               ys - wh[..., 1:2] / 2,
-                               xs + wh[..., 0:1] / 2,
-                               ys + wh[..., 1:2] / 2], 2)
-    detections = torch.cat([bboxes, scores, classes], 2)
+                        ys - wh[..., 1:2] / 2,
+                        xs + wh[..., 0:1] / 2,
+                        ys + wh[..., 1:2] / 2], dim=2)
+    detections = torch.cat([bboxes, scores, clses], dim=2)
+
+
+    # reg = gather_feat_alt(reg,inds)
+    # xs = torch.reshape(xs,(batch_size,top_k,1)) + reg[:,:,0:1]
+    # ys = torch.reshape(ys,(batch_size, top_k, 1)) + reg[:, :, 1:2]
+    # wh = gather_feat_alt(wh,inds)
+
+    # classes = torch.reshape(clses, (batch_size, top_k, 1)).to(torch.float32)
+    # scores = torch.reshape(scores, (batch_size, top_k, 1))
+    # bboxes = torch.cat([xs - wh[..., 0:1] / 2,
+    #                            ys - wh[..., 1:2] / 2,
+    #                            xs + wh[..., 0:1] / 2,
+    #                            ys + wh[..., 1:2] / 2], 2)
+    # detections = torch.cat([bboxes, scores, classes], 2)
+
     return centernet_map_to_original(detections,img_shape,down_sampling,thresh)
 
 
 def centernet_topk(heatmap,top_k):
     B, C, H, W = heatmap.shape
-    scores = torch.reshape(heatmap, (B, -1))
+    scores = torch.reshape(heatmap, (B,C,-1))
     topk_scores, topk_inds = torch.topk(scores,top_k, sorted=True)
-    topk_clses = topk_inds % C
-    topk_xs = (topk_inds // C % W).to(torch.float32)
-    topk_ys = (topk_inds // C // W).to(torch.float32)
-    topk_inds = (topk_ys * (W) + topk_xs).to(torch.int64)
-    return topk_scores, topk_inds, topk_clses, topk_ys, topk_xs
+
+
+    topk_inds = topk_inds % (H * W)
+    topk_ys   = (topk_inds / W).int().float()
+    topk_xs   = (topk_inds % W).int().float()
+
+    topk_score, topk_ind = torch.topk(topk_scores.view(B, -1), top_k)
+    topk_clses = (topk_ind / top_k).int()
+    topk_inds = gather_feat(
+        topk_inds.view(B, -1, 1), topk_ind).view(B, top_k)
+    topk_ys = gather_feat(topk_ys.view(B, -1, 1), topk_ind).view(B, top_k)
+    topk_xs = gather_feat(topk_xs.view(B, -1, 1), topk_ind).view(B, top_k)
+
+    return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
+    
+    # topk_clses = topk_inds % C
+    # topk_xs = (topk_inds // C % W).to(torch.float32)
+    # topk_ys = (topk_inds // C // W).to(torch.float32)
+    # topk_inds = (topk_ys * (W) + topk_xs).to(torch.int64)
+    # return topk_scores, topk_inds, topk_clses, topk_ys, topk_xs
 
 def centernet_nms(heatmap, pool_size=3):
     hmax = torch.nn.MaxPool2d(pool_size, stride=1, padding=1)(heatmap)

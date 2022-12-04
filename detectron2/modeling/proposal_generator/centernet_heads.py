@@ -3,6 +3,7 @@
 from typing import Dict
 import torch
 from torch import nn
+import torch.nn.functional as F
 from detectron2.layers.shape_spec import ShapeSpec
 from detectron2.layers.wrappers import Conv2d,  BatchNorm2d
 from detectron2.config.config import configurable
@@ -21,6 +22,7 @@ class CenternetHeads(nn.Module):
         self.bn1 = BatchNorm2d(in_channels)
         self.bn2 = BatchNorm2d(in_channels)
         self.bn3 = BatchNorm2d(in_channels)
+        self.last_maxpool = nn.MaxPool2d(kernel_size=1,stride=2)
 
         self.tp0 = nn.ConvTranspose2d(
             in_channels, in_channels, kernel_size=(1,1), stride=(2,2), padding=(0,0)
@@ -55,24 +57,26 @@ class CenternetHeads(nn.Module):
 
     def forward(self,x):
         out = self.tp0(x["p6"], output_size = x["p5"].size())
-        out = self.bn0(out)
+        out = F.silu(self.bn0(out))
         # out = F.interpolate(out,(25,34))
         x["p5"] = torch.add(x["p5"], out)
 
         out = self.tp1(x["p5"],output_size = x["p4"].size())
-        out = self.bn1(out)
+        out = F.silu(self.bn1(out))
         # out = F.interpolate(out,(50,68))
         x["p4"] += out
 
         out = self.tp2(x["p4"],output_size = x["p3"].size())
-        out = self.bn2(out)
+        out = F.silu(self.bn2(out))
         # out = F.interpolate(out,(100,136))
         x["p3"] += out
 
         out = self.tp3(x["p3"],output_size = x["p2"].size())
-        out = self.bn3(out)
+        out = F.silu(self.bn3(out))
         # out = F.interpolate(out,(200,272))
         x["p2"] += out
+
+        x["p2"] = self.last_maxpool(x["p2"])
 
         heatmap = self.heatmap_layer(x["p2"])
         reg = self.reg_layer(x["p2"])
