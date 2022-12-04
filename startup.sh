@@ -7,5 +7,5 @@ python -m venv proj
 git clone https://github.com/8x4y2z/tf-detectron.git
 cd tf-detectron
 pip install -r requirements.txt
-pip install pycocotools -y
-pip install opencv-python -y
+pip install pycocotools
+pip install opencv-python
