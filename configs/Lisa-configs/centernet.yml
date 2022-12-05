@@ -1,6 +1,7 @@
 _BASE_: "../lisa-centernet.yaml"
 MODEL:
-  WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  # WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  WEIGHTS: "centernet_yuv_prepeo_1gc_6wh_8bs/model_final.pth"
   MASK_ON: False
   RESNETS:
     DEPTH: 50
@@ -18,6 +19,6 @@ INPUT:
   MIN_SIZE_TEST: 360
   MAX_SIZE_TEST: 360
   RANDOM_FLIP: none
-OUTPUT_DIR: "./centernet_props_train"
+OUTPUT_DIR: "./centernet_pre"
 TEST:
   EVAL_PERIOD: 10000

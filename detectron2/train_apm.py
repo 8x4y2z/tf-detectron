@@ -150,7 +150,7 @@ class APMEvaluator(COCOEvaluator):
             with PathManager.open(file_path, "wb") as f:
                 torch.save(out, f)
 
-        return {}
+        return out
 
         self._results = OrderedDict()
         if "proposals" in predictions[0]:

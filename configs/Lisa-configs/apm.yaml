@@ -1,11 +1,13 @@
 _BASE_: "../lisa-rcnn-fpn-apm.yaml"
 MODEL:
-  WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  # WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  WEIGHTS: "apm_out/model_final.pth"
   MASK_ON: False
   APM: True
   RESNETS:
     DEPTH: 50
 INPUT:
   RANDOM_FLIP: none
+  MIN_SIZE_TEST: 480
   MIN_SIZE_TRAIN: (480,)
-OUTPUT_DIR: "./apm_output"
+OUTPUT_DIR: "./apm_output_test"

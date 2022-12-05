@@ -107,6 +107,8 @@ Run on multiple machines:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
+    parser.add_argument("--config-file1", default="", metavar="FILE", help="path to config file")
+    parser.add_argument("--config-file2", default="", metavar="FILE", help="path to config file")
     parser.add_argument(
         "--resume",
         action="store_true",

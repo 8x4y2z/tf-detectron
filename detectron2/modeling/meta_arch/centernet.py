@@ -249,7 +249,6 @@ class Centernet(nn.Module):
             Otherwise, a list[Instances] containing raw network outputs.
         """
         assert not self.training
-
         images = self.preprocess_image(batched_inputs)
         features = self.backbone(images.tensor)
 
